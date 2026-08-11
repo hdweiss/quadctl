@@ -241,6 +241,9 @@ func ListSubdirectories(path string) ([]string, error) {
 		if !entry.IsDir() {
 			continue
 		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
 		directories = append(directories, entry.Name())
 	}
 	return directories, nil

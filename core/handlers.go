@@ -731,6 +731,30 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 
 	commands := []Command{}
 
+	// Only .container and .kube quadlets run a process whose logs are worth tailing.
+	var serviceQuadlets []*util.Quadlet
+	for _, q := range quadlets {
+		if q.Type == ".container" || q.Type == ".kube" {
+			serviceQuadlets = append(serviceQuadlets, q)
+		}
+	}
+
+	var serviceName string
+	if len(serviceQuadlets) == 1 {
+		serviceName = serviceQuadlets[0].ServiceName
+	} else if len(serviceQuadlets) > 1 {
+		names := []string{}
+		for _, q := range serviceQuadlets {
+			names = append(names, q.ServiceName)
+		}
+		selected, err := util.SelectFromList(names)
+		if err != nil {
+			fmt.Printf("Error selecting service: %v\n", err)
+			os.Exit(1)
+		}
+		serviceName = selected
+	}
+
 	var buf bytes.Buffer
 	data := map[string]string{}
 	if !quadctl.IsRootful {
@@ -743,6 +767,9 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 	}
 
 	cmd := util.ParseFields(buf.String())
+	if serviceName != "" {
+		cmd = append(cmd, "-u", serviceName)
+	}
 	if quadctl.IsPrintOnly {
 		c := NewCommand("Opening systemd logs")
 		c.Cmd = cmd
