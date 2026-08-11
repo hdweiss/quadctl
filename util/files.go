@@ -45,6 +45,9 @@ func InitConfig(quadctl *Quadctl) {
 	if val, ok := config["quadlet.user.path"]; ok && val != "" {
 		quadctl.QuadletUserPath = val
 	}
+	if val, ok := config["systemd.enabled"]; ok && (val == "true" || val == "1") {
+		quadctl.IsSystemd = true
+	}
 	if val, ok := config["systemd.start"]; ok && val != "" {
 		quadctl.SystemdStartTmpl = template.Must(template.New("systemdStart").Parse(val))
 	}
