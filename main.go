@@ -29,7 +29,7 @@ func main() {
 
 	// If no quadlets at this point, only list|ls is still a valid command.
 	// Abort with a message. User probably didn't notice they were neither in a quadlet directory nor specified one as argument.
-	if len(quadlets) < 1 && !(slices.Contains([]string{"list", "ls", "logs"}, quadctl.Subcommand)) {
+	if len(quadlets) < 1 && !(slices.Contains([]string{"list", "ls", "logs", "ps", "pull", "images", "status", "stats"}, quadctl.Subcommand)) {
 
 		err := displayQuadletSelector(quadctl)
 		if err != nil {
@@ -44,24 +44,42 @@ func main() {
 	// Route to appropriate subcommand handler
 	switch quadctl.Subcommand {
 	case "ps":
+		if len(quadlets) < 1 {
+			quadlets = util.InitAllQuadlets(quadctl)
+		}
 		HandlePS(quadctl, quadlets)
 	case "stats":
+		if len(quadlets) < 1 {
+			quadlets = util.InitAllQuadlets(quadctl)
+		}
 		HandleStats(quadctl, quadlets)
 	case "status":
+		if len(quadlets) < 1 {
+			quadlets = util.InitAllQuadlets(quadctl)
+		}
 		if quadctl.IsSystemd {
 			commands = HandleSystemdStatus(quadctl, quadlets)
 		} else {
 			HandlePS(quadctl, quadlets)
 		}
 	case "logs":
+		if len(quadlets) < 1 {
+			quadlets = util.InitAllQuadlets(quadctl)
+		}
 		if quadctl.IsSystemd {
 			commands = HandleSystemdLogs(quadctl, quadlets)
 		} else {
 			commands = HandleLogs(quadctl, quadlets)
 		}
 	case "images":
+		if len(quadlets) < 1 {
+			quadlets = util.InitAllQuadlets(quadctl)
+		}
 		HandleImages(quadlets)
 	case "pull":
+		if len(quadlets) < 1 {
+			quadlets = util.InitAllQuadlets(quadctl)
+		}
 		commands = HandlePull(quadctl, quadlets)
 	case "list", "ls":
 		HandleList(quadctl)

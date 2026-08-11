@@ -86,7 +86,11 @@ func DefaultPostFn(c *Command) {
 	if slices.Contains(c.Cmd, "run") && (!slices.Contains(c.Cmd, "-d") || !slices.Contains(c.Cmd, "--detach")) {
 		return // Skip stopping the spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
 	}
-	c.Spinner.FinalMSG = fmt.Sprintf("%s... Done\n", c.Label)
+	if c.Error != nil {
+		c.Spinner.FinalMSG = fmt.Sprintf("%s... Failed\n", c.Label)
+	} else {
+		c.Spinner.FinalMSG = fmt.Sprintf("%s... Done\n", c.Label)
+	}
 	c.Spinner.Stop()
 }
 

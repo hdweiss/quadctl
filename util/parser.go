@@ -121,6 +121,29 @@ func InitQuadlets(quadctl *Quadctl) []*Quadlet {
 	return ordered
 }
 
+// InitAllQuadlets discovers and parses quadlets across every subdirectory of the
+// configured quadlet source path, returning the combined list. Used by commands
+// like 'ps' that report on all quadlets managed by quadctl when no specific
+// quadlet name or path was given on the command line.
+func InitAllQuadlets(quadctl *Quadctl) []*Quadlet {
+	dirs, err := ListSubdirectories(quadctl.QuadletSrcPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing quadlets in %s: %v\n", quadctl.QuadletSrcPath, err)
+		os.Exit(1)
+	}
+
+	origSearchDir := quadctl.SearchDir
+	defer func() { quadctl.SearchDir = origSearchDir }()
+
+	var all []*Quadlet
+	for _, d := range dirs {
+		quadctl.SearchDir = filepath.Join(quadctl.QuadletSrcPath, d)
+		all = append(all, InitQuadlets(quadctl)...)
+	}
+
+	return all
+}
+
 // --- PARSING AND GENERATION LOGIC ---
 
 func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Quadlet, error) {
@@ -326,6 +349,21 @@ func checkExtension(filename string, quadletText string) string {
 	}
 	//fmt.Printf("checkExtension filename returned: %s\n", filename)
 	return filename
+}
+
+// IsQuadletExtension reports whether ext (as returned by filepath.Ext) is one of
+// the recognized quadlet file extensions (.container, .pod, .network, .volume, .kube).
+func IsQuadletExtension(ext string) bool {
+	return extensions[ext]
+}
+
+// ParseQuadletFile parses a single quadlet file in isolation, without regard to
+// its siblings or dependencies. Used to resolve the ServiceName (which may be
+// overridden via a ServiceName= option) of a quadlet file that is still present
+// in an installed systemd directory but has already been removed from the
+// source directory, so it can be stopped before its stale installed copy is deleted.
+func ParseQuadletFile(path string) (*Quadlet, error) {
+	return parseQuadlet(path)
 }
 
 func parseQuadlet(path string) (*Quadlet, error) {

@@ -449,8 +449,74 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 
 	commands = append(commands, c)
 
+	// Stop and remove any previously installed quadlet files that no longer exist
+	// in the source directory, so deletions are reflected the same way edits are.
+	if !quadctl.UseSymbolicLinks {
+		commands = append(commands, pruneStaleSystemdFiles(quadctl, targetDir, searchDir)...)
+	}
+
 	// Reload systemd to recognize the new quadlet services
 	commands = append(commands, HandleSystemdReload(quadctl)...)
+
+	return commands
+}
+
+// pruneStaleSystemdFiles finds files under the installed subdirectory for searchDir
+// that are no longer present in searchDir itself (ie. were deleted from the quadlet
+// source since the last install) and removes them, stopping their systemd service
+// first if the stale file is a quadlet definition. Only applicable when quadlets are
+// installed into a dedicated subdirectory per source directory (UseSubdirectories);
+// without that, the installed directory is shared across unrelated quadlet groups and
+// there's no reliable way to tell which leftover files belong to this one.
+func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) []Command {
+	commands := []Command{}
+
+	if !quadctl.UseSubdirectories {
+		return commands
+	}
+
+	dest := filepath.Join(targetDir, filepath.Base(searchDir))
+	destEntries, err := os.ReadDir(dest)
+	if err != nil {
+		return commands
+	}
+	srcEntries, err := os.ReadDir(searchDir)
+	if err != nil {
+		return commands
+	}
+
+	present := map[string]bool{}
+	for _, e := range srcEntries {
+		present[e.Name()] = true
+	}
+
+	for _, e := range destEntries {
+		name := e.Name()
+		if present[name] {
+			continue
+		}
+
+		stalePath := filepath.Join(dest, name)
+
+		// If the stale file is itself a quadlet definition, stop its service before
+		// deleting it so podman cleans up the resources it created.
+		if !e.IsDir() && util.IsQuadletExtension(filepath.Ext(name)) {
+			if stale, err := util.ParseQuadletFile(stalePath); err == nil {
+				commands = append(commands, HandleSystemdStop(quadctl, []*util.Quadlet{stale}, true)...)
+			}
+		}
+
+		isDir := e.IsDir()
+		cmd := NewCommand(fmt.Sprintf("Removing %s (no longer present in %s)", name, searchDir))
+		cmd.RunFn = func(c *Command) {
+			if isDir {
+				c.Error = os.RemoveAll(stalePath)
+			} else {
+				c.Error = os.Remove(stalePath)
+			}
+		}
+		commands = append(commands, cmd)
+	}
 
 	return commands
 }
@@ -467,17 +533,13 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comma
 
 	commands := []Command{}
 
-	// Create if not existing
-	info, _ := listSystemdInstalledQuadlets(quadlets)
-	if len(info) < len(quadlets) {
-		//fmt.Printf("installed count: %d, quadlet count: %d\n", len(info), len(quadlets))
-		cmd := HandleSystemdCreate(quadctl, quadlets)
-		commands = append(commands, cmd...)
-	} else {
-		// Reload quadlet definitions if not done as part of create step
-		cmd := HandleSystemdReload(quadctl)
-		commands = append(commands, cmd...)
-	}
+	// Always (re)install the quadlet definitions, whether or not they're already
+	// installed, so that edits to the source files are picked up on every start.
+	// CopyFile/CopyDir overwrite existing files in place, so this is a no-op cost
+	// wise when nothing has changed. HandleSystemdCreate also reloads systemd
+	// after copying so the generator picks up any changes.
+	cmd := HandleSystemdCreate(quadctl, quadlets)
+	commands = append(commands, cmd...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
 	if info, err := getContainerPS(quadlets); err == nil && len(info) > 0 {
@@ -722,7 +784,7 @@ func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 		}
 		return commands
 	} else {
-		displayListOfSystemdInstalledQuadlets(quadlets)
+		displayListOfSystemdInstalledQuadlets(quadctl, quadlets)
 		return []Command{}
 	}
 }
@@ -1467,12 +1529,13 @@ func resourceExists(qType string, name string) bool {
 	return runCommandSilently(inspectCmd) == nil
 }
 
-func listSystemdInstalledQuadlets(quadlets []*util.Quadlet) ([][]string, error) {
+func listSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}},{{.Path}},{{.UnitName}},{{.Status}}"}
 	output, err := runCommandCapture(cmd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching installed quadlets: %v\n", err)
-		return nil, err
+		// Older podman releases don't have the `quadlet list` subcommand. Fall back to
+		// querying each unit's state via systemctl instead of failing outright.
+		return listInstalledQuadletsViaSystemctl(quadctl, quadlets)
 	}
 	//.Printf("podman quadlet list:\n%s\n", output)
 	lines := strings.Split(output, "\n")
@@ -1490,6 +1553,46 @@ func listSystemdInstalledQuadlets(quadlets []*util.Quadlet) ([][]string, error) 
 				break
 			}
 		}
+	}
+	return info, nil
+}
+
+// listInstalledQuadletsViaSystemctl reproduces the columns produced by
+// `podman quadlet list` (name, path, unit name, status) by asking systemctl
+// about each quadlet's generated unit directly. Used as a fallback on podman
+// versions that predate the `quadlet list` subcommand.
+//
+// Only quadlets whose unit is actually loaded by systemd are included, matching
+// the contract of the primary `podman quadlet list` based implementation above:
+// callers (e.g. HandleSystemdStart) rely on a quadlet's absence from this list to
+// detect that it still needs to be installed. `systemctl is-active` alone can't be
+// used for that check since it reports "inactive" both for a stopped-but-installed
+// unit and for a unit that was never installed at all.
+func listInstalledQuadletsViaSystemctl(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([][]string, error) {
+	var info [][]string
+	for _, q := range quadlets {
+		loadArgs := []string{"systemctl"}
+		if !quadctl.IsRootful {
+			loadArgs = append(loadArgs, "--user")
+		}
+		loadArgs = append(loadArgs, "show", q.ServiceName, "--property=LoadState", "--value")
+		loadState, _ := runCommandCapture(loadArgs)
+		loadState = strings.TrimSpace(loadState)
+		if loadState == "" || loadState == "not-found" {
+			continue
+		}
+
+		activeArgs := []string{"systemctl"}
+		if !quadctl.IsRootful {
+			activeArgs = append(activeArgs, "--user")
+		}
+		activeArgs = append(activeArgs, "is-active", q.ServiceName)
+		output, _ := runCommandCapture(activeArgs)
+		status := strings.TrimSpace(output)
+		if status == "" {
+			status = "unknown"
+		}
+		info = append(info, []string{filepath.Base(q.Filepath), q.Filepath, q.ServiceName, status})
 	}
 	return info, nil
 }
@@ -1528,7 +1631,7 @@ func getContainerPS(quadlets []*util.Quadlet) ([][]string, error) {
 	return psInfo, nil
 }
 
-func displayListOfSystemdInstalledQuadlets(quadlets []*util.Quadlet) error {
+func displayListOfSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
 	/*
 		//podman quadlet list --format "{{.Name}}|{{.UnitName}}|{{.Path}}|{{.Status}}\n"
 		cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}}|{{.UnitName}}|{{.Path}}|{{.Status}}"}
@@ -1546,13 +1649,13 @@ func displayListOfSystemdInstalledQuadlets(quadlets []*util.Quadlet) error {
 			info = append(info, parts)
 		}
 	*/
-	info, err := listSystemdInstalledQuadlets(quadlets)
+	info, err := listSystemdInstalledQuadlets(quadctl, quadlets)
 	if err != nil {
 		return err
 	}
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"NAME", "UNIT NAME", "PATH", "STATUS"})
+	t.AppendHeader(table.Row{"NAME", "PATH", "UNIT NAME", "STATUS"})
 	for _, quadletInfo := range info {
 		if len(quadletInfo) >= 4 {
 			t.AppendRow(table.Row{
