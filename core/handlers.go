@@ -1,11 +1,15 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -449,6 +453,12 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 
 	commands = append(commands, c)
 
+	// Verify podman can actually turn what we just installed into systemd units before
+	// reloading/starting anything. Generation failures (bad option, unknown reference, etc.)
+	// otherwise fail silently during daemon-reload, surfacing later as a confusing
+	// "unit not found" from systemctl start with no indication of the real cause.
+	commands = append(commands, validateQuadletGenerationCommand(quadctl, quadlets, targetDir))
+
 	// Stop and remove any previously installed quadlet files that no longer exist
 	// in the source directory, so deletions are reflected the same way edits are.
 	if !quadctl.UseSymbolicLinks {
@@ -519,6 +529,151 @@ func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) 
 	}
 
 	return commands
+}
+
+// quadletGeneratorPaths are the well-known install locations of podman's quadlet generator
+// binary (podman-system-generator / podman-user-generator are both symlinks to the same
+// binary), checked in order since the exact path varies by distro and podman version.
+var quadletGeneratorPaths = []string{
+	"/usr/lib/systemd/system-generators/podman-system-generator",
+	"/usr/libexec/podman/quadlet",
+	"/usr/lib/podman/quadlet",
+}
+
+func findQuadletGenerator() string {
+	for _, p := range quadletGeneratorPaths {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	if p, err := exec.LookPath("quadlet"); err == nil {
+		return p
+	}
+	return ""
+}
+
+// stripGeneratorLogPrefix strips the "quadlet-generator[<pid>]: " prefix the generator adds to
+// some (but not all) of the lines it logs, so error output reads the same regardless of which
+// code path inside podman produced it.
+func stripGeneratorLogPrefix(line string) string {
+	if strings.HasPrefix(line, "quadlet-generator[") {
+		if idx := strings.Index(line, "]: "); idx != -1 {
+			return line[idx+3:]
+		}
+	}
+	return line
+}
+
+var (
+	generatorLineNumRe  = regexp.MustCompile(`line (\d+)`)
+	generatorQuotedPath = regexp.MustCompile(`"([^"]+\.[a-z]+)"`)
+)
+
+// enrichWithSourceLine appends the actual offending line from the quadlet file to a generator
+// error that references a specific line number (e.g. a raw parse error like 'file contains line
+// 8: "LDSA" which is not a key-value pair...'), so the file doesn't need to be opened separately
+// to see what's actually there.
+func enrichWithSourceLine(line string) string {
+	lineMatch := generatorLineNumRe.FindStringSubmatch(line)
+	pathMatch := generatorQuotedPath.FindStringSubmatch(line)
+	if lineMatch == nil || pathMatch == nil {
+		return line
+	}
+	lineNum, err := strconv.Atoi(lineMatch[1])
+	if err != nil {
+		return line
+	}
+	content, err := readFileLine(pathMatch[1], lineNum)
+	if err != nil {
+		return line
+	}
+	return fmt.Sprintf("%s\n      %s:%d: %s", line, filepath.Base(pathMatch[1]), lineNum, content)
+}
+
+func readFileLine(path string, n int) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for i := 1; scanner.Scan(); i++ {
+		if i == n {
+			return strings.TrimSpace(scanner.Text()), nil
+		}
+	}
+	return "", fmt.Errorf("line %d not found in %s", n, path)
+}
+
+// validateQuadletGenerationCommand runs podman's own quadlet generator in dry-run mode against
+// the just-installed quadlet directory and reports, using podman's own error message, any file
+// it could not convert into a systemd unit. Without this, a bad quadlet option or reference
+// fails silently during daemon-reload, and the first sign of trouble is a confusing "unit not
+// found" (or similar) from the systemctl start that follows.
+func validateQuadletGenerationCommand(quadctl *util.Quadctl, quadlets []*util.Quadlet, targetDir string) Command {
+	c := NewCommand("Validating quadlet definitions")
+	// This is a quick, silent-on-success check; skip the spinner so a failure (which exits
+	// the process directly, matching how other fatal errors in this function are handled)
+	// doesn't leave it dangling mid-animation.
+	c.PreFn = func(c *Command) {}
+	c.PostFn = func(c *Command) {}
+	c.RunFn = func(c *Command) {
+		generator := findQuadletGenerator()
+		if generator == "" {
+			return // Can't validate on this system; fall through to the normal reload/start flow.
+		}
+
+		outDir, err := os.MkdirTemp("", "quadctl-quadlet-validate-")
+		if err != nil {
+			return
+		}
+		defer os.RemoveAll(outDir)
+
+		args := []string{generator, "--dryrun"}
+		if !quadctl.IsRootful {
+			args = append(args, "-user")
+		}
+		args = append(args, outDir, outDir, outDir)
+
+		genCmd := exec.Command(args[0], args[1:]...)
+		genCmd.Env = append(os.Environ(), "QUADLET_UNIT_DIRS="+targetDir)
+		output, err := genCmd.CombinedOutput()
+		if err == nil {
+			return
+		}
+
+		installed := map[string]bool{}
+		for _, q := range quadlets {
+			installed[filepath.Base(q.Filepath)] = true
+		}
+
+		var problems []string
+		for _, rawLine := range strings.Split(string(output), "\n") {
+			line := stripGeneratorLogPrefix(strings.TrimSpace(rawLine))
+			if line == "" || strings.HasPrefix(line, "Loading source unit file") {
+				continue // Informational, not an error (podman logs one of these per file, success or not).
+			}
+			for name := range installed {
+				if strings.Contains(line, name) {
+					problems = append(problems, enrichWithSourceLine(line))
+					break
+				}
+			}
+		}
+
+		if len(problems) == 0 {
+			return // Failure doesn't involve any quadlet we just installed (e.g. an unrelated pre-existing file).
+		}
+
+		fmt.Fprintf(os.Stderr, "\nError: podman could not generate systemd units for the following quadlet(s):\n\n")
+		for _, p := range problems {
+			fmt.Fprintf(os.Stderr, "  %s\n", p)
+		}
+		fmt.Fprintf(os.Stderr, "\nFix the issue(s) above in the quadlet file and try again.\n")
+		os.Exit(1)
+	}
+	return c
 }
 
 func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {

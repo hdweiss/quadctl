@@ -31,6 +31,8 @@ func InitFlags(quadctl *Quadctl) {
 	pullFlags.BoolVar(&quadctl.IsFile, "f", false, "Specify that the provided path is a file rather than a directory (default: false)")
 	pullFlags.BoolVar(&quadctl.IsPrintOnly, "print", false, "Print podman commands without executing")
 	pullFlags.BoolVar(&quadctl.IsPrintOnly, "p", false, "Print podman commands without executing")
+	pullFlags.BoolVar(&quadctl.IsShowAll, "all", false, "Pull images for all quadlets under quadlet.src.path, not just the current directory")
+	pullFlags.BoolVar(&quadctl.IsShowAll, "a", false, "Pull images for all quadlets under quadlet.src.path, not just the current directory")
 	pullFlags.Usage = PrintPullUsage
 	flagSets["pull"] = pullFlags
 
@@ -100,6 +102,8 @@ func InitFlags(quadctl *Quadctl) {
 	statusFlags.BoolVar(&quadctl.IsFile, "f", false, "Specify that the provided path is a file rather than a directory (default: false)")
 	statusFlags.BoolVar(&quadctl.IsPrintOnly, "print", false, "Print podman commands without executing")
 	statusFlags.BoolVar(&quadctl.IsPrintOnly, "p", false, "Print podman commands without executing")
+	statusFlags.BoolVar(&quadctl.IsShowAll, "all", false, "Show status for all quadlets under quadlet.src.path, not just the current directory")
+	statusFlags.BoolVar(&quadctl.IsShowAll, "a", false, "Show status for all quadlets under quadlet.src.path, not just the current directory")
 	statusFlags.Usage = PrintStatusUsage
 	flagSets["status"] = statusFlags
 
@@ -107,6 +111,8 @@ func InitFlags(quadctl *Quadctl) {
 	psFlags := flag.NewFlagSet("ps", flag.ExitOnError)
 	psFlags.BoolVar(&quadctl.IsFile, "file", false, "Specify that the provided path is a file rather than a directory (default: false)")
 	psFlags.BoolVar(&quadctl.IsFile, "f", false, "Specify that the provided path is a file rather than a directory (default: false)")
+	psFlags.BoolVar(&quadctl.IsShowAll, "all", false, "Show containers for all quadlets under quadlet.src.path, not just the current directory")
+	psFlags.BoolVar(&quadctl.IsShowAll, "a", false, "Show containers for all quadlets under quadlet.src.path, not just the current directory")
 	psFlags.Usage = PrintPsUsage
 	flagSets["ps"] = psFlags
 
@@ -114,6 +120,8 @@ func InitFlags(quadctl *Quadctl) {
 	statsFlags := flag.NewFlagSet("stats", flag.ExitOnError)
 	statsFlags.BoolVar(&quadctl.IsFile, "file", false, "Specify that the provided path is a file rather than a directory (default: false)")
 	statsFlags.BoolVar(&quadctl.IsFile, "f", false, "Specify that the provided path is a file rather than a directory (default: false)")
+	statsFlags.BoolVar(&quadctl.IsShowAll, "all", false, "Show stats for all quadlets under quadlet.src.path, not just the current directory")
+	statsFlags.BoolVar(&quadctl.IsShowAll, "a", false, "Show stats for all quadlets under quadlet.src.path, not just the current directory")
 	statsFlags.Usage = PrintStatsUsage
 	flagSets["stats"] = statsFlags
 
@@ -121,6 +129,8 @@ func InitFlags(quadctl *Quadctl) {
 	imagesFlags := flag.NewFlagSet("images", flag.ExitOnError)
 	imagesFlags.BoolVar(&quadctl.IsFile, "file", false, "Specify that the provided path is a file rather than a directory (default: false)")
 	imagesFlags.BoolVar(&quadctl.IsFile, "f", false, "Specify that the provided path is a file rather than a directory (default: false)")
+	imagesFlags.BoolVar(&quadctl.IsShowAll, "all", false, "Show images for all quadlets under quadlet.src.path, not just the current directory")
+	imagesFlags.BoolVar(&quadctl.IsShowAll, "a", false, "Show images for all quadlets under quadlet.src.path, not just the current directory")
 	imagesFlags.Usage = PrintImagesUsage
 	flagSets["images"] = imagesFlags
 
@@ -178,6 +188,8 @@ func PrintPullUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s %s [flags] [path]\n\n", ToolName, "pull")
 	fmt.Fprintf(os.Stderr, "Flags:\n")
 	flagSets["pull"].PrintDefaults()
+	fmt.Fprintf(os.Stderr, "\nNotes:\n")
+	fmt.Fprintf(os.Stderr, "  Use -a to pull images for all quadlets under quadlet.src.path, not just the current directory.\n")
 }
 
 func PrintCreateUsage() {
@@ -247,6 +259,7 @@ func PrintStatusUsage() {
 	fmt.Fprintf(os.Stderr, "  Calls 'podman quadlet list' for systemd status by default, 'systemctl status' with -l flag.\n")
 	fmt.Fprintf(os.Stderr, "  Use sudo for rootless quadlets.\n")
 	fmt.Fprintf(os.Stderr, "  Use -s to display status of quadlets under systemd.\n")
+	fmt.Fprintf(os.Stderr, "  Use -a to show status for all quadlets under quadlet.src.path, not just the current directory.\n")
 }
 
 func PrintPsUsage() {
@@ -259,6 +272,7 @@ func PrintPsUsage() {
 	fmt.Fprintf(os.Stderr, "  Displays the same information whether containers are running under systemd or podman.\n")
 	fmt.Fprintf(os.Stderr, "  The -s flag is not required or supported.\n")
 	fmt.Fprintf(os.Stderr, "  Use sudo for rootless quadlets.\n")
+	fmt.Fprintf(os.Stderr, "  Use -a to show containers for all quadlets under quadlet.src.path, not just the current directory.\n")
 }
 
 func PrintStatsUsage() {
@@ -270,6 +284,7 @@ func PrintStatsUsage() {
 	fmt.Fprintf(os.Stderr, "  Displays the same information whether containers are running under systemd or podman.\n")
 	fmt.Fprintf(os.Stderr, "  The -s flag is not required or supported.\n")
 	fmt.Fprintf(os.Stderr, "  Use sudo for rootless quadlets.\n")
+	fmt.Fprintf(os.Stderr, "  Use -a to show stats for all quadlets under quadlet.src.path, not just the current directory.\n")
 }
 
 func PrintImagesUsage() {
@@ -281,6 +296,7 @@ func PrintImagesUsage() {
 	fmt.Fprintf(os.Stderr, "  Displays the same information whether containers are running under systemd or podman.\n")
 	fmt.Fprintf(os.Stderr, "  The -s flag is not required or supported.\n")
 	fmt.Fprintf(os.Stderr, "  Use sudo for rootless quadlets.\n")
+	fmt.Fprintf(os.Stderr, "  Use -a to show images for all quadlets under quadlet.src.path, not just the current directory.\n")
 }
 
 func PrintListUsage() {

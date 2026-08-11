@@ -35,6 +35,7 @@ type Quadctl struct {
 	IsFile            bool
 	ListDepth         int
 	IsListAll         bool
+	IsShowAll         bool
 	IsLongStatus      bool
 	Subcommand        string
 	SearchDir         string

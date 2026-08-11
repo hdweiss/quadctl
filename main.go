@@ -44,17 +44,17 @@ func main() {
 	// Route to appropriate subcommand handler
 	switch quadctl.Subcommand {
 	case "ps":
-		if len(quadlets) < 1 {
+		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
 		}
 		HandlePS(quadctl, quadlets)
 	case "stats":
-		if len(quadlets) < 1 {
+		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
 		}
 		HandleStats(quadctl, quadlets)
 	case "status":
-		if len(quadlets) < 1 {
+		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
 		}
 		if quadctl.IsSystemd {
@@ -72,12 +72,12 @@ func main() {
 			commands = HandleLogs(quadctl, quadlets)
 		}
 	case "images":
-		if len(quadlets) < 1 {
+		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
 		}
 		HandleImages(quadlets)
 	case "pull":
-		if len(quadlets) < 1 {
+		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
 		}
 		commands = HandlePull(quadctl, quadlets)
