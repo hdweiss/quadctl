@@ -4,7 +4,7 @@ Companion to `TODO.md` (the defect list) and `FEATURES.md` (the parking lot). Th
 order of operations: refactor, not rewrite, with two contained subsystem rewrites along
 the way.
 
-**Status:** Phases 0, 1, 2 and 2.5 are done. Next up is Phase 3.
+**Status:** Phases 0 through 3 are done. Next up is Phase 4.
 
 ## Principles
 
@@ -163,7 +163,7 @@ root.*
 
 ---
 
-## Phase 3 — The two subsystem rewrites
+## Phase 3 — The two subsystem rewrites — **done**
 
 Contained, and both are root causes rather than symptoms.
 
@@ -184,6 +184,26 @@ directories in `InitAllQuadlets`. Split into immutable `Config` and per-run `Sta
 predictable `/tmp/<dirname>` that gets `RemoveAll`'d.
 
 **Done when:** `Exec=/bin/sh -c "echo hi"` produces the right argv, verified by a golden test.
+— *Met: `TestExecBecomesArgv` asserts the three arguments directly, and `commands.golden` now
+quotes any argument containing whitespace, so a change in argv boundaries shows up as a diff
+rather than hiding inside a space-joined line.*
+
+*One thing 3.1 turned up that the plan didn't anticipate:* keeping the value whole through
+parsing isn't enough on its own, because the podman template output was being re-split
+afterwards — `"{{.Key}} {{.Value}}"` rendered to a string and then cut on whitespace loses the
+value's spaces just as thoroughly. `QuadletOptionToPodman` now returns argv, rendering with a
+placeholder and substituting the value after the cut.
+
+*And one 3.2 turned up:* the installed directory under the generator root was taking its name
+from wherever the files happened to be copied from, which was harmless only because the
+`.quadlets` scratch path used to be named after the source directory. Replacing it with
+`os.MkdirTemp` would have given every run a fresh, randomly named install directory. The
+install name now comes from the source directory and the source path only says where to read.
+
+**Residual, recorded in `TODO.md`:** splitting a repeatable option's line is unconditional, so
+a `Volume=` path containing spaces needs quoting. Podman decides that per option; the schema
+has a single `AllowMultiple` flag and cannot. Worth a second schema field when something needs
+it.
 
 ---
 
@@ -296,8 +316,8 @@ Phase 0  bleeding      ──▶ release                                        
 Phase 1  seams         ──▶ runner iface → errors → determinism → tests    done
 Phase 2  moves         ──▶ split files → registry → housekeeping          done
 Phase 2.5 internal/    ──▶ pure rename                                    done
-Phase 3  rewrites      ──▶ value model → state split                      next
-Phase 4  consistency   ──▶ naming → matching → config → output → paths
+Phase 3  rewrites      ──▶ value model → state split                      done
+Phase 4  consistency   ──▶ naming → matching → config → output → paths     next
 Phase 5  docs/release
 Phase 6  go idiom      ──▶ util split → package docs → lint → release → tasks
                           (6.3–6.5 are independent; they can land any time)
