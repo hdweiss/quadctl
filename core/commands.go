@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -94,8 +95,30 @@ func DefaultPostFn(c *Command) {
 	c.Spinner.Stop()
 }
 
-// Common handling for dry run / verbose output and command execution for all handlers that generate commands.
-func RunCommands(quadctl *util.Quadctl, commands []Command) {
+// abortingSubcommands are the subcommands where a failed command makes the ones after it
+// meaningless: they build resources up in dependency order, so once a step fails the rest
+// would either fail in turn or act on a half-created group. Teardown and query subcommands
+// (stop, remove, status, logs, ...) run to completion instead and report at the end, since
+// each of their commands stands on its own.
+var abortingSubcommands = []string{"pull", "create", "start", "run"}
+
+// exitCodeFor maps a failed command's error to the exit code quadctl should return -
+// the underlying process's own status where there is one (podman's 125, systemctl's 5,
+// ...), otherwise a generic failure.
+func exitCodeFor(err error) int {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+		return exitErr.ExitCode()
+	}
+	return 1
+}
+
+// Common handling for dry run / verbose output and command execution for all handlers that
+// generate commands. Returns the exit code quadctl should terminate with: 0 when every
+// command succeeded, otherwise the status of the last command that failed.
+func RunCommands(quadctl *util.Quadctl, commands []Command) int {
+
+	exitCode := 0
 
 	if quadctl.IsVerbose {
 		isHeaderPrinted := false
@@ -124,7 +147,7 @@ func RunCommands(quadctl *util.Quadctl, commands []Command) {
 			}
 		}
 	} else if len(commands) > 0 {
-		for _, c := range commands {
+		for i, c := range commands {
 			c.PreCmd()
 			c.RunCmd()
 			c.PostCmd()
@@ -156,9 +179,19 @@ func RunCommands(quadctl *util.Quadctl, commands []Command) {
 				if diag != "" {
 					fmt.Fprint(os.Stderr, diag)
 				}
+
+				exitCode = exitCodeFor(c.Error)
+				if slices.Contains(abortingSubcommands, quadctl.Subcommand) {
+					if remaining := len(commands) - i - 1; remaining > 0 {
+						fmt.Fprintf(os.Stderr, "Aborting %s: %d remaining command(s) not run.\n", quadctl.Subcommand, remaining)
+					}
+					return exitCode
+				}
 			}
 		}
 	}
+
+	return exitCode
 }
 
 // isSystemctlLifecycleCommand reports whether cmd is a 'systemctl start/stop/restart/try-restart'

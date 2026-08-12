@@ -120,7 +120,7 @@ func main() {
 	}
 
 	if len(commands) > 0 {
-		RunCommands(quadctl, commands)
+		os.Exit(RunCommands(quadctl, commands))
 	}
 }
 
