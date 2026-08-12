@@ -1581,7 +1581,6 @@ func generateStartupCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, [
 		}
 
 		cmd = append(cmd, "podman", "play", "kube")
-		fmt.Printf("generateStartupCommand(%s): %v\n", q.ID, cmd)
 		if kubeSec, ok := q.Sections["Kube"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(kubeSec)...)
 			for k, vals := range kubeSec {
