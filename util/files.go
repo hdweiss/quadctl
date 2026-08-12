@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"embed"
 	"fmt"
-	"html/template"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 )
 
 //go:embed config/quadctl.ini

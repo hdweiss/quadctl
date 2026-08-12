@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"slices"
+	"text/template"
 
 	. "github.com/fkmiec/quadctl/core"
 	. "github.com/fkmiec/quadctl/schema"

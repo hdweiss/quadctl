@@ -719,10 +719,7 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comma
 
 	// Start the systemd services
 	var buf bytes.Buffer
-	data := map[string]string{}
-	if !quadctl.IsRootful {
-		data["user"] = "--user"
-	}
+	data := systemdTemplateData(quadctl)
 
 	err := quadctl.SystemdStartTmpl.Execute(&buf, data)
 	if err != nil {
@@ -751,10 +748,7 @@ func HandleSystemdStop(quadctl *util.Quadctl, quadlets []*util.Quadlet, stopNetA
 
 	// Stop the systemd services
 	var buf bytes.Buffer
-	data := map[string]string{}
-	if !quadctl.IsRootful {
-		data["user"] = "--user"
-	}
+	data := systemdTemplateData(quadctl)
 	err := quadctl.SystemdStopTmpl.Execute(&buf, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing systemd stop template: %v\n", err)
@@ -932,10 +926,7 @@ func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 		commands := []Command{}
 
 		var buf bytes.Buffer
-		data := map[string]string{}
-		if !quadctl.IsRootful {
-			data["user"] = "--user"
-		}
+		data := systemdTemplateData(quadctl)
 		err := quadctl.SystemdStatusTmpl.Execute(&buf, data)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing systemd status template: %v\n", err)
@@ -988,10 +979,7 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 	}
 
 	var buf bytes.Buffer
-	data := map[string]string{}
-	if !quadctl.IsRootful {
-		data["user"] = "--user"
-	}
+	data := systemdTemplateData(quadctl)
 	err := quadctl.SystemdLogsTmpl.Execute(&buf, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing systemd logs: %v\n", err)
@@ -1014,10 +1002,7 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 
 func HandleSystemdReload(quadctl *util.Quadctl) []Command {
 	var buf bytes.Buffer
-	data := map[string]string{}
-	if !quadctl.IsRootful {
-		data["user"] = "--user"
-	}
+	data := systemdTemplateData(quadctl)
 	err := quadctl.SystemdReloadTmpl.Execute(&buf, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing systemd reload template: %v\n", err)
@@ -1682,6 +1667,17 @@ func generateStopCommand(quadctl *util.Quadctl, q *util.Quadlet) []string {
 		}
 	}
 	return cmd
+}
+
+// systemdTemplateData builds the data passed to the configurable systemd command templates.
+// The "user" key is always present, empty when rootful: text/template renders a missing map
+// key as the literal "<no value>".
+func systemdTemplateData(quadctl *util.Quadctl) map[string]string {
+	user := ""
+	if !quadctl.IsRootful {
+		user = "--user"
+	}
+	return map[string]string{"user": user}
 }
 
 // kubeDownForce reports whether a .kube quadlet sets KubeDownForce=true. The key is
