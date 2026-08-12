@@ -1,3 +1,6 @@
+// Package tui is quadctl's interactive prompting: a small Bubble Tea list the user picks
+// from when a command needs a choice that wasn't on the command line - which quadlet
+// directory to act on, or which service's logs to follow.
 package tui
 
 import (

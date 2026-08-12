@@ -1,3 +1,14 @@
+// Package command turns parsed quadlets into podman commands and runs them.
+//
+// A Command is one labelled step - the argv to run, or a Go function where the step is a file
+// operation - and RunCommands is the single place they are printed, run, or reported on. Every
+// handler builds a slice of them and hands it back rather than executing anything itself,
+// which is what makes -p (print mode) a property of the runner rather than a flag each
+// handler has to remember.
+//
+// The handlers here are the podman-direct half of quadctl: they compute dependency order
+// themselves and shell out to podman. The systemd half lives in internal/systemd, which
+// installs quadlet files and lets systemd do the ordering; it builds the same Command values.
 package command
 
 import (

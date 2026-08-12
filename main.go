@@ -1,3 +1,10 @@
+// Command quadctl is a compose-like CLI for running Podman Quadlets, either directly
+// through podman or by installing them into systemd's quadlet generator directories.
+//
+// This file is the pipeline: parse global flags, load config, resolve the subcommand and its
+// flags, load the schema, discover and parse quadlet files, dispatch. registry.go declares
+// the command line itself. Nothing below main calls os.Exit - every failure comes back here
+// as an error, and run is the only place that picks an exit code (PLAN.md 1.2).
 package main
 
 import (

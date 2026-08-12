@@ -1,3 +1,10 @@
+// Package runner is the single seam between quadctl and the host.
+//
+// Everything that shells out - podman, systemctl, journalctl, podman's quadlet generator -
+// goes through the Runner held on the run state. ExecRunner is the real one; RecordingRunner
+// records invocations and answers from a canned table, which is what lets a test assert on
+// the exact argv a handler produces with none of those binaries installed. Reaching for
+// exec.Command outside this package puts a command beyond the reach of both -p and the tests.
 package runner
 
 import (
@@ -29,10 +36,7 @@ type Options struct {
 	Env  []string // extra variables, appended to the inherited environment
 }
 
-// Runner executes external commands (podman, systemctl, journalctl, podman's quadlet
-// generator). It is the single seam between quadctl and the host: everything that shells
-// out goes through the Runner held on the run state, so a test can drive a handler and
-// assert on the exact argv it produces without any of those binaries being installed.
+// Runner executes external commands.
 type Runner interface {
 	// Run executes args, returning whatever output the mode captures. An empty args slice
 	// is a no-op.

@@ -1,3 +1,12 @@
+// Package config reads quadctl.ini and holds what it configured.
+//
+// Config is read once, before any work starts, and is treated as read-only from then on:
+// it describes the machine, not the invocation. What varies per run - flags, the subcommand,
+// the directory being acted on - is quadlet.State instead (PLAN.md 3.2).
+//
+// The package also owns the filesystem helpers quadctl installs quadlets with, and the
+// default quadctl.ini it writes when a host has none (embedded from quadctl.ini in this
+// directory).
 package config
 
 import (

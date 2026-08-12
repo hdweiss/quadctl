@@ -1,3 +1,14 @@
+// Package quadlet reads quadlet files and describes one run over them.
+//
+// A Quadlet is a single parsed file. Sections holds every assignment exactly as written, one
+// entry per line and nothing tokenized: whether a value is one value or several is a property
+// of the option, which only the schema knows, so OptionValues answers that at use time and
+// ParseFields is the one place quoting is resolved (PLAN.md 3.1). Splitting a value anywhere
+// else is how Exec=/bin/sh -c "echo hi" used to lose its argument.
+//
+// The package also resolves what podman will call each resource, orders quadlets by their
+// dependencies, and carries State - the per-run struct threaded through everything below
+// main.
 package quadlet
 
 import (

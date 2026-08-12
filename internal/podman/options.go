@@ -1,3 +1,9 @@
+// Package podman is everything quadctl knows about podman itself: how to spell a quadlet
+// option as podman arguments, and how to ask podman what currently exists.
+//
+// OptionArgs is the translation half - one quadlet key/value in, argv out, using the
+// templates in internal/schema. ResourceExists and ContainerPS are the query half: read-only
+// questions a handler asks while it is still deciding which commands to build.
 package podman
 
 import (

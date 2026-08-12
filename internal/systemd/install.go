@@ -1,3 +1,13 @@
+// Package systemd is the other half of every subcommand that has two: instead of driving
+// podman directly, it installs quadlet files into systemd's generator directories and lets
+// systemd start, stop and order the units podman's generator makes from them.
+//
+// The install side also prunes files that vanished from the source directory and validates,
+// through podman's own generator, that what was just installed can actually become units -
+// a generation failure otherwise surfaces much later as a confusing "unit not found".
+//
+// It builds command.Command values like every other handler, so both halves print and run
+// the same way.
 package systemd
 
 import (

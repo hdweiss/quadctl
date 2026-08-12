@@ -1,3 +1,9 @@
+// Package schema is a declarative model of every Quadlet and Podman option quadctl supports.
+//
+// Each SchemaOption describes one key: its quadlet-file spelling, its podman equivalent, a
+// text/template that renders it into command arguments, whether it may be repeated, and a
+// validator regex. When podman or quadlet adds an option, this is where support for it is
+// added - not in the code that builds commands.
 package schema
 
 import (
