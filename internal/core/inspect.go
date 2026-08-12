@@ -83,8 +83,12 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 
 	if len(psInfo) > 0 {
 		for _, info := range psInfo {
-			name := strings.TrimSpace(info[5]) // IMAGE ID from ps output
-			if len(name) < 12 {
+			// The image the container was created from, as podman reports it: a reference
+			// like "docker.io/library/alpine:3.20", not an ID. The old code skipped anything
+			// under 12 characters here, presumably guarding against truncated IDs, which hid
+			// every short image name there is - alpine, nginx, caddy.
+			name := strings.TrimSpace(info[5])
+			if name == "" {
 				continue
 			}
 			cmd[4] = "reference=" + name
@@ -112,7 +116,7 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 			// Images only pertain to containers
 			if q.Type == ".container" {
 				name := strings.TrimSpace(util.LastValue(q.Sections["Container"], "Image"))
-				if name == "" || len(name) < 12 {
+				if name == "" {
 					continue
 				}
 				cmd[4] = "reference=" + name
@@ -135,8 +139,8 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 						if !ok {
 							continue
 						}
-						name := strings.TrimSpace(image) // IMAGE ID from quadlet file
-						if len(name) < 12 {
+						name := strings.TrimSpace(image)
+						if name == "" {
 							continue
 						}
 						cmd[4] = "reference=" + name

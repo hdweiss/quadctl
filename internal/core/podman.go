@@ -108,23 +108,48 @@ func getContainerPS(runner util.Runner, quadlets []*util.Quadlet) ([][]string, e
 		}
 		//filter for containers that match our quadlet definitions by name or parent pod
 		for _, q := range quadlets {
-			if q.Type == ".container" && strings.HasSuffix(parts[1], q.ResourceName) || (q.ParentPod != "" && strings.HasSuffix(parts[2], q.PodResourceName)) {
+			if quadletOwnsContainer(q, strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])) {
 				psInfo = append(psInfo, parts)
 				break
-			}
-			if q.Type == ".kube" {
-				for _, res := range q.KubeResources {
-					// Names come from user-supplied k8s YAML, so neither key is guaranteed
-					// to be present or a string.
-					resName, hasName := res["name"].(string)
-					podName, hasPod := res["pod"].(string)
-					if (res["type"] == "container" && hasName && strings.HasSuffix(parts[1], resName)) || (hasPod && strings.HasSuffix(parts[2], podName)) {
-						psInfo = append(psInfo, parts)
-						break
-					}
-				}
 			}
 		}
 	}
 	return psInfo, nil
+}
+
+// quadletOwnsContainer reports whether the podman container called name, in the pod called
+// pod (both empty-able, as podman prints them), is one this quadlet describes.
+//
+// Names are compared exactly. The old code asked whether the podman name *ended with* the
+// quadlet's, which made the quadlet `web` claim an unrelated container called `myweb`; it was
+// only ever a way to paper over quadctl and the quadlet generator disagreeing about names,
+// and PLAN.md Phase 4 removed the disagreement.
+func quadletOwnsContainer(q *util.Quadlet, name, pod string) bool {
+	switch q.Type {
+	case ".container":
+		if name == q.ResourceName {
+			return true
+		}
+		// A container in a pod is also reported for the pod it belongs to, so that the pod's
+		// infra container and any sibling show up alongside it.
+		return q.PodResourceName != "" && pod == q.PodResourceName
+	case ".kube":
+		// 'podman kube play' names the pod after the YAML's metadata.name and each container
+		// "<pod>-<container name>". Names here come from user-supplied YAML, so neither key
+		// is guaranteed to be present or a string.
+		for _, res := range q.KubeResources {
+			resName, hasName := res["name"].(string)
+			resPod, hasPod := res["pod"].(string)
+			if hasPod && pod == resPod {
+				return true
+			}
+			if res["type"] == "container" && hasName && hasPod && name == resPod+"-"+resName {
+				return true
+			}
+			if res["type"] == "pod" && hasName && pod == resName {
+				return true
+			}
+		}
+	}
+	return false
 }

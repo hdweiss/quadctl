@@ -167,15 +167,19 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   means everything gets stopped. The systemd variant (`:700`) stops whenever ps returns any
   row at all, including `Exited` ones.
 
-- [ ] **ps/stats/images/logs match containers by suffix** (`core/handlers.go:1772`).
-  `strings.HasSuffix(parts[1], q.GeneratedNames["container"])` makes quadlet `web` match an
-  unrelated container named `myweb`. The `||` clause is also outside the type guard
-  (`&&` binds tighter), so pod-name matching isn't scoped to `.container` quadlets. Use
-  exact name matching, or filter with `podman ps --filter`.
+- [x] **ps/stats/images/logs match containers by suffix** (`core/handlers.go:1772`).
+  `strings.HasSuffix(parts[1], q.GeneratedNames["container"])` made quadlet `web` match an
+  unrelated container named `myweb`. The `||` clause was also outside the type guard
+  (`&&` binds tighter), so pod-name matching wasn't scoped to `.container` quadlets.
+  *Fixed by `PLAN.md` Phase 4:* `core.quadletOwnsContainer` compares names exactly, scoped
+  per quadlet type. Suffix matching was only ever covering for the naming divergence the
+  same phase removed; `.kube` matches on the pod podman kube play creates and on the
+  `<pod>-<container>` name it gives each container.
 
-- [ ] **`quadctl images` silently hides short image names** (`core/handlers.go:1092`, `:1122`, `:1144`).
+- [x] **`quadctl images` silently hides short image names** (`core/handlers.go:1092`, `:1122`, `:1144`).
   `if len(name) < 12 { continue }` — presumably meant to reject truncated image *IDs*, but
-  it's applied to image *names*, so `alpine`, `nginx`, `caddy` etc. never show up.
+  it was applied to image *names*, so `alpine`, `nginx`, `caddy` etc. never showed up.
+  *Fixed by `PLAN.md` Phase 4:* all three sites skip an empty name and nothing else.
 
 - [x] **Leftover debug print** — `fmt.Printf("generateStartupCommand(%s): %v\n", …)`
   fires on every `.kube` start (`core/handlers.go:1563`).
