@@ -10,14 +10,14 @@ import (
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func pruneTestQuadctl() *util.Quadctl {
-	q := &util.Quadctl{
-		Runner:            &util.RecordingRunner{},
-		Subcommand:        "create",
-		IsRootful:         true,
-		UseSubdirectories: true,
+func pruneTestQuadctl() *util.State {
+	q := &util.State{
+		Runner:     &util.RecordingRunner{},
+		Subcommand: "create",
+		IsRootful:  true,
+		Config:     util.DefaultConfig(),
 	}
-	q.SystemdStopTmpl = template.Must(template.New("systemdStop").Parse("systemctl {{.user}} stop"))
+	q.Config.SystemdStopTmpl = template.Must(template.New("systemdStop").Parse("systemctl {{.user}} stop"))
 	return q
 }
 
@@ -42,7 +42,7 @@ func TestPruneStaleSystemdFiles(t *testing.T) {
 	mkdirAll(t, filepath.Dir(unrelated))
 	writeFile(t, unrelated, "[Container]\nImage=alpine\n")
 
-	commands, err := pruneStaleSystemdFiles(pruneTestQuadctl(), targetDir, searchDir)
+	commands, err := pruneStaleSystemdFiles(pruneTestQuadctl(), targetDir, filepath.Base(searchDir), searchDir)
 	if err != nil {
 		t.Fatalf("pruneStaleSystemdFiles: %v", err)
 	}
@@ -85,22 +85,22 @@ func TestPruneStaleSystemdFilesRefusesGeneratorRoot(t *testing.T) {
 	writeFile(t, filepath.Join(targetDir, "unrelated.container"), "[Container]\nImage=alpine\n")
 	mkdirAll(t, filepath.Join(targetDir, "traefik"))
 
-	for _, searchDir := range []string{".", "..", "/", ""} {
-		commands, err := pruneStaleSystemdFiles(pruneTestQuadctl(), targetDir, searchDir)
+	for _, installName := range []string{".", "..", "/", ""} {
+		commands, err := pruneStaleSystemdFiles(pruneTestQuadctl(), targetDir, installName, t.TempDir())
 		if err != nil {
-			t.Fatalf("searchDir %q: %v", searchDir, err)
+			t.Fatalf("installName %q: %v", installName, err)
 		}
 		if len(commands) != 0 {
-			t.Errorf("searchDir %q generated %v, want nothing", searchDir, labelsOf(commands))
+			t.Errorf("installName %q generated %v, want nothing", installName, labelsOf(commands))
 		}
 	}
 }
 
 func TestPruneStaleSystemdFilesSkippedWithoutSubdirectories(t *testing.T) {
 	quadctl := pruneTestQuadctl()
-	quadctl.UseSubdirectories = false
+	quadctl.Config.UseSubdirectories = false
 
-	commands, err := pruneStaleSystemdFiles(quadctl, t.TempDir(), t.TempDir())
+	commands, err := pruneStaleSystemdFiles(quadctl, t.TempDir(), "stack", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,5 +147,39 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestSystemdInstallNameComesFromTheSourceDirectory pins what the scratch-directory change
+// in PLAN.md 3.2 could quietly have broken. A .quadlets bundle is extracted somewhere
+// private, but the directory it installs into is still named after the user's own directory:
+// name it after the scratch directory and every run installs a new randomly named copy that
+// HandleSystemdRemove and the stale-file prune can never find again.
+func TestSystemdInstallNameComesFromTheSourceDirectory(t *testing.T) {
+	targetDir := t.TempDir()
+	srcDir := filepath.Join(t.TempDir(), "webstack")
+	scratch := filepath.Join(t.TempDir(), "quadctl-quadlets-123456")
+	mkdirAll(t, srcDir, scratch)
+	writeFile(t, filepath.Join(scratch, "cache.container"), "[Container]\nImage=alpine\n")
+
+	quadctl := pruneTestQuadctl()
+	quadctl.SearchDir = srcDir
+	quadctl.DotQuadletsPath = scratch
+	quadctl.Config.QuadletRootPath = targetDir
+
+	commands, err := HandleSystemdCreate(quadctl, nil)
+	if err != nil {
+		t.Fatalf("HandleSystemdCreate: %v", err)
+	}
+
+	var installed []string
+	for _, c := range commands {
+		installed = append(installed, c.Output...)
+	}
+	if !containsSubstring(installed, filepath.Join(targetDir, "webstack")) {
+		t.Errorf("install should go to the source directory's name, got:\n  %s", strings.Join(installed, "\n  "))
+	}
+	if containsSubstring(installed, "quadctl-quadlets-123456") {
+		t.Errorf("install directory is named after the scratch directory:\n  %s", strings.Join(installed, "\n  "))
 	}
 }

@@ -122,7 +122,7 @@ func exitCodeFor(err error) int {
 // Common handling for dry run / verbose output and command execution for all handlers that
 // generate commands. Returns the exit code quadctl should terminate with: 0 when every
 // command succeeded, otherwise the status of the last command that failed.
-func RunCommands(quadctl *util.Quadctl, commands []Command) int {
+func RunCommands(quadctl *util.State, commands []Command) int {
 
 	exitCode := 0
 
@@ -242,7 +242,7 @@ func stripSystemdJobFailureHint(output string) string {
 // diagnoseFailedSystemctlCommand builds troubleshooting context for a failed 'systemctl start/stop/restart'
 // invocation by fetching the unit's status and its most recent journal entries directly, rather than
 // leaving the user to run "systemctl status" / "journalctl" themselves as systemctl's own error suggests.
-func diagnoseFailedSystemctlCommand(quadctl *util.Quadctl, cmd []string) string {
+func diagnoseFailedSystemctlCommand(quadctl *util.State, cmd []string) string {
 	if !isSystemctlLifecycleCommand(cmd) {
 		return ""
 	}

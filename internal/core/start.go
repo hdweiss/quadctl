@@ -8,7 +8,7 @@ import (
 )
 
 // Call handleCreate. Then start.
-func HandleStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 

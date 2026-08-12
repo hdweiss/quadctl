@@ -220,3 +220,75 @@ func TestDropInOverridesBaseFile(t *testing.T) {
 		t.Errorf("Environment = %#v, want just the override", got)
 	}
 }
+
+// TestInitAllQuadletsDoesNotLeakScratchDir is the regression test for the state split
+// (PLAN.md 3.2): DotQuadletsPath used to live on the run state and was never cleared, so the
+// first directory containing a .quadlets bundle set it for every directory scanned after it.
+// Under -s that made quadctl copy into, and install from, the wrong directory's extraction.
+func TestInitAllQuadletsDoesNotLeakScratchDir(t *testing.T) {
+	src := t.TempDir()
+
+	// "a" holds a bundle; "b" is an ordinary directory. ListSubdirectories walks them in
+	// name order, so b is parsed after a.
+	bundled := filepath.Join(src, "a")
+	plain := filepath.Join(src, "b")
+	for _, d := range []string{bundled, plain} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, filepath.Join(bundled, "stack.quadlets"), `# FileName=cache.container
+[Container]
+Image=docker.io/library/redis:7
+---
+`)
+	write(t, filepath.Join(plain, "web.container"), "[Container]\nImage=docker.io/library/nginx:latest\n")
+
+	state := &State{Config: &Config{QuadletSrcPath: src}, SearchDir: src}
+	defer state.Cleanup()
+
+	if _, err := InitAllQuadlets(state); err != nil {
+		t.Fatalf("InitAllQuadlets: %v", err)
+	}
+
+	// "b" was scanned last and has no bundle of its own, so nothing should be left pointing
+	// at "a"'s extraction.
+	if state.DotQuadletsPath != "" {
+		t.Errorf("DotQuadletsPath = %q after scanning a directory with no .quadlets file", state.DotQuadletsPath)
+	}
+}
+
+// TestScratchDirsAreRemovedOnCleanup covers the other half: extraction goes to a private
+// directory made by os.MkdirTemp, not a predictable /tmp/<dirname> that the next run
+// RemoveAll's, and the run takes it with it when it ends.
+func TestScratchDirsAreRemovedOnCleanup(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "stack.quadlets"), `# FileName=cache.container
+[Container]
+Image=docker.io/library/redis:7
+---
+`)
+
+	state := &State{Config: DefaultConfig(), SearchDir: dir}
+	if _, err := InitQuadlets(state); err != nil {
+		t.Fatalf("InitQuadlets: %v", err)
+	}
+
+	scratch := state.DotQuadletsPath
+	if scratch == "" {
+		t.Fatal("a .quadlets bundle should have been extracted somewhere")
+	}
+	if scratch == filepath.Join(os.TempDir(), filepath.Base(dir)) {
+		t.Errorf("scratch directory %q is derived from the source directory name, so two runs collide", scratch)
+	}
+	if _, err := os.Stat(scratch); err != nil {
+		t.Fatalf("scratch directory should exist while the run is in progress: %v", err)
+	}
+
+	state.Cleanup()
+
+	if _, err := os.Stat(scratch); !os.IsNotExist(err) {
+		t.Errorf("scratch directory %q survived Cleanup", scratch)
+	}
+	state.Cleanup() // Calling it twice must be safe: main defers it, errors return through it.
+}

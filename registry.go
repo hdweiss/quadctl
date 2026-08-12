@@ -30,7 +30,7 @@ type flagSpec struct {
 	Arg      string // value placeholder shown in help; empty for booleans
 	Default  string // default shown in help; empty to omit
 	Usage    string
-	register func(fs *flag.FlagSet, quadctl *util.Quadctl, name string, usage string)
+	register func(fs *flag.FlagSet, quadctl *util.State, name string, usage string)
 }
 
 // names renders the flag as it appears in help: "-p, --print", or "    --pargs" when there
@@ -42,14 +42,14 @@ func (f flagSpec) names() string {
 	return "-" + f.Short + ", --" + f.Name
 }
 
-func boolFlag(get func(*util.Quadctl) *bool) func(*flag.FlagSet, *util.Quadctl, string, string) {
-	return func(fs *flag.FlagSet, quadctl *util.Quadctl, name, usage string) {
+func boolFlag(get func(*util.State) *bool) func(*flag.FlagSet, *util.State, string, string) {
+	return func(fs *flag.FlagSet, quadctl *util.State, name, usage string) {
 		fs.BoolVar(get(quadctl), name, false, usage)
 	}
 }
 
-func stringFlag(get func(*util.Quadctl) *string) func(*flag.FlagSet, *util.Quadctl, string, string) {
-	return func(fs *flag.FlagSet, quadctl *util.Quadctl, name, usage string) {
+func stringFlag(get func(*util.State) *string) func(*flag.FlagSet, *util.State, string, string) {
+	return func(fs *flag.FlagSet, quadctl *util.State, name, usage string) {
 		fs.StringVar(get(quadctl), name, "", usage)
 	}
 }
@@ -60,54 +60,54 @@ var (
 	flagSystemd = flagSpec{
 		Name: "systemd", Short: "s", Default: "false",
 		Usage:    "Manage services through systemd rather than podman directly",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsSystemd }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsSystemd }),
 	}
 	flagFile = flagSpec{
 		Name: "file", Short: "f", Default: "false",
 		Usage:    "Treat the given path as a single quadlet file rather than a directory",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsFile }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsFile }),
 	}
 	flagPrint = flagSpec{
 		Name: "print", Short: "p", Default: "false",
 		Usage:    "Print the commands that would run, without executing them",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsPrintOnly }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsPrintOnly }),
 	}
 	flagVerbose = flagSpec{
 		Name: "verbose", Short: "v", Default: "false",
 		Usage:    "Print detailed information about command execution and warnings",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsVerbose }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsVerbose }),
 	}
 	flagAll = flagSpec{
 		Name: "all", Short: "a", Default: "false",
 		Usage:    "Apply to every quadlet under quadlet.src.path, not just the current directory",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsShowAll }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsShowAll }),
 	}
 	flagListAll = flagSpec{
 		Name: "all", Short: "a", Default: "false",
 		Usage:    "List quadlets in all configured paths (src, systemd user and systemd root)",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsListAll }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsListAll }),
 	}
 	flagLong = flagSpec{
 		Name: "long", Short: "l", Default: "false",
 		Usage:    "Display long format output from systemctl status",
-		register: boolFlag(func(q *util.Quadctl) *bool { return &q.IsLongStatus }),
+		register: boolFlag(func(q *util.State) *bool { return &q.IsLongStatus }),
 	}
 	flagDepth = flagSpec{
 		Name: "depth", Short: "d", Arg: "int", Default: strconv.Itoa(defaultListDepth),
 		Usage: "Depth of the quadlet directory listing",
-		register: func(fs *flag.FlagSet, quadctl *util.Quadctl, name, usage string) {
+		register: func(fs *flag.FlagSet, quadctl *util.State, name, usage string) {
 			fs.IntVar(&quadctl.ListDepth, name, defaultListDepth, usage)
 		},
 	}
 	flagPodmanArgs = flagSpec{
 		Name: "pargs", Arg: "string",
 		Usage:    "Additional arguments to pass to podman (e.g. --pargs='--rm -it')",
-		register: stringFlag(func(q *util.Quadctl) *string { return &q.PodmanArgs }),
+		register: stringFlag(func(q *util.State) *string { return &q.PodmanArgs }),
 	}
 	flagExec = flagSpec{
 		Name: "exec", Arg: "string",
 		Usage:    "Command to execute in the container (e.g. --exec='/bin/bash')",
-		register: stringFlag(func(q *util.Quadctl) *string { return &q.RunCmd }),
+		register: stringFlag(func(q *util.State) *string { return &q.RunCmd }),
 	}
 )
 
@@ -119,7 +119,7 @@ var globalFlags = []flagSpec{flagSystemd}
 
 // handlerFn is the shape every subcommand dispatches through. Handlers that print rather
 // than generate commands (ps, stats, images, list) return no commands.
-type handlerFn func(*util.Quadctl, []*util.Quadlet) ([]core.Command, error)
+type handlerFn func(*util.State, []*util.Quadlet) ([]core.Command, error)
 
 type subcommand struct {
 	Name     string
@@ -213,7 +213,7 @@ func commands() []*subcommand {
 			Synopsis: "Stop resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagPrint, flagVerbose},
 			Run:      core.HandleStop,
-			RunSystemd: func(q *util.Quadctl, qs []*util.Quadlet) ([]core.Command, error) {
+			RunSystemd: func(q *util.State, qs []*util.Quadlet) ([]core.Command, error) {
 				return core.HandleSystemdStop(q, qs, false)
 			},
 			NeedsQuadlets: true,
@@ -257,7 +257,7 @@ func commands() []*subcommand {
 			Synopsis: "Display a tree view of quadlet directories and files.",
 			Flags:    []flagSpec{flagDepth, flagListAll},
 			// HandleList reads IsSystemd itself to pick which configured path to walk.
-			Run: func(quadctl *util.Quadctl, _ []*util.Quadlet) ([]core.Command, error) {
+			Run: func(quadctl *util.State, _ []*util.Quadlet) ([]core.Command, error) {
 				return nil, core.HandleList(quadctl)
 			},
 			Notes: []string{
@@ -274,7 +274,7 @@ func commands() []*subcommand {
 			Summary:  "Show images defined for the set of related quadlets.",
 			Synopsis: "List images defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]core.Command, error) {
+			Run: func(quadctl *util.State, quadlets []*util.Quadlet) ([]core.Command, error) {
 				return nil, core.HandleImages(quadctl.Runner, quadlets)
 			},
 			WidensWhenEmpty: true,
@@ -291,7 +291,7 @@ func commands() []*subcommand {
 			Summary:  "Show state of containers.",
 			Synopsis: "Display state of containers defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]core.Command, error) {
+			Run: func(quadctl *util.State, quadlets []*util.Quadlet) ([]core.Command, error) {
 				return nil, core.HandlePS(quadctl, quadlets)
 			},
 			WidensWhenEmpty: true,
@@ -309,7 +309,7 @@ func commands() []*subcommand {
 			Summary:  "Show live stats for containers.",
 			Synopsis: "Display live stats of running containers defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]core.Command, error) {
+			Run: func(quadctl *util.State, quadlets []*util.Quadlet) ([]core.Command, error) {
 				return nil, core.HandleStats(quadctl, quadlets)
 			},
 			WidensWhenEmpty: true,
@@ -327,7 +327,7 @@ func commands() []*subcommand {
 			Synopsis: "Display status for resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:    []flagSpec{flagLong, flagFile, flagPrint, flagAll},
 			// Without -s, status is ps.
-			Run: func(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]core.Command, error) {
+			Run: func(quadctl *util.State, quadlets []*util.Quadlet) ([]core.Command, error) {
 				return nil, core.HandlePS(quadctl, quadlets)
 			},
 			RunSystemd:      core.HandleSystemdStatus,
@@ -347,7 +347,7 @@ func commands() []*subcommand {
 // systemd. Refusing is a failure, so it travels back as an error and exits non-zero rather
 // than printing an explanation and claiming success.
 func refuseSystemd(why string) handlerFn {
-	return func(quadctl *util.Quadctl, _ []*util.Quadlet) ([]core.Command, error) {
+	return func(quadctl *util.State, _ []*util.Quadlet) ([]core.Command, error) {
 		return nil, fmt.Errorf("'%s' is not supported with systemd (-s): %s", quadctl.Subcommand, why)
 	}
 }
@@ -364,7 +364,7 @@ type registry struct {
 // newRegistry builds every flag set up front, before anything is parsed. Registering a flag
 // writes its default through the pointer it targets, so a subcommand flag set built after
 // the global parse would undo a -s given before the subcommand.
-func newRegistry(quadctl *util.Quadctl) *registry {
+func newRegistry(quadctl *util.State) *registry {
 	r := &registry{commands: commands(), byName: map[string]*subcommand{}}
 
 	r.global = flag.NewFlagSet(util.ToolName, flag.ContinueOnError)
@@ -386,7 +386,7 @@ func newRegistry(quadctl *util.Quadctl) *registry {
 
 // registerFlags registers each spec under both its long and short form, pointed at the same
 // field of the run state.
-func registerFlags(fs *flag.FlagSet, quadctl *util.Quadctl, flags []flagSpec) {
+func registerFlags(fs *flag.FlagSet, quadctl *util.State, flags []flagSpec) {
 	for _, f := range flags {
 		f.register(fs, quadctl, f.Name, f.Usage)
 		if f.Short != "" {
@@ -412,7 +412,7 @@ func (r *registry) parseGlobalFlags(argv []string) error {
 // processSubcommand resolves the subcommand, parses its flags and the path argument, and
 // derives the search directory. It runs after the config is loaded because the path
 // argument may name a directory under quadlet.src.path.
-func (r *registry) processSubcommand(quadctl *util.Quadctl) (*subcommand, error) {
+func (r *registry) processSubcommand(quadctl *util.State) (*subcommand, error) {
 	name := strings.ToLower(r.args[0])
 	c, ok := r.byName[name]
 	if !ok {
@@ -442,7 +442,7 @@ func (r *registry) processSubcommand(quadctl *util.Quadctl) (*subcommand, error)
 
 // dispatch runs the subcommand, picking the systemd implementation when one exists and -s
 // was given.
-func (c *subcommand) dispatch(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]core.Command, error) {
+func (c *subcommand) dispatch(quadctl *util.State, quadlets []*util.Quadlet) ([]core.Command, error) {
 	if quadctl.IsSystemd && c.RunSystemd != nil {
 		return c.RunSystemd(quadctl, quadlets)
 	}

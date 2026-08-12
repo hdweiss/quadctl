@@ -22,7 +22,7 @@ func TestSystemdTemplateDataAlwaysSetsUser(t *testing.T) {
 
 	tmpl := template.Must(template.New("stop").Parse("systemctl {{.user}} stop"))
 	for _, tt := range tests {
-		data := systemdTemplateData(&util.Quadctl{IsRootful: tt.rootful})
+		data := systemdTemplateData(&util.State{IsRootful: tt.rootful})
 		if _, ok := data["user"]; !ok {
 			t.Fatalf("rootful=%v: template data has no \"user\" key", tt.rootful)
 		}

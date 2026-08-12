@@ -11,13 +11,13 @@ import (
 
 // newTestQuadctl returns a run state wired to a RecordingRunner, so nothing in a test
 // reaches podman, systemctl or the host at all.
-func newTestQuadctl(sub string) (*util.Quadctl, *util.RecordingRunner) {
+func newTestQuadctl(sub string) (*util.State, *util.RecordingRunner) {
 	runner := &util.RecordingRunner{}
-	return &util.Quadctl{
-		Subcommand:      sub,
-		Runner:          runner,
-		IsRootful:       true,
-		IsRemoveVolumes: true,
+	return &util.State{
+		Subcommand: sub,
+		Runner:     runner,
+		IsRootful:  true,
+		Config:     util.DefaultConfig(),
 	}, runner
 }
 

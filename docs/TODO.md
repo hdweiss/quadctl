@@ -121,17 +121,23 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `network rm`; only the systemd path honors the config. `quadctl rm` destroys data the
   user explicitly asked to keep.
 
-- [ ] **`DotQuadletsPath` leaks across directories** (`util/parser.go:191`, set but never cleared).
+- [x] **`DotQuadletsPath` leaks across directories** (`util/parser.go:191`, set but never cleared).
   `InitAllQuadlets` loops over every directory under `quadlet.src.path` reusing the same
   `Quadctl`; once one directory contains a `.quadlets` file, every *subsequent* directory's
   files get copied into that stale temp dir and parsed from there. Affects `-a` and every
   "nothing here, so scan everything" fallback in `main.go`.
+  *Fixed by `PLAN.md` 3.2:* `discoverAndParseQuadlets` answers it fresh for every directory,
+  with a regression test.
 
-- [ ] **`.quadlets` extraction uses a predictable shared temp path** (`util/parser.go:263-279`).
+- [x] **`.quadlets` extraction uses a predictable shared temp path** (`util/parser.go:263-279`).
   `os.TempDir()/<parent dir name>` is `os.RemoveAll`'d and recreated — it can clobber an
   unrelated `/tmp/<name>`, and on a multi-user host it's trivially pre-creatable/symlinkable
-  by another user. Use `os.MkdirTemp` and clean up at exit. Related: extraction copies
-  *every* sibling file (including `.env` files with secrets) into that world-readable dir.
+  by another user. Use `os.MkdirTemp` and clean up at exit.
+  *Fixed by `PLAN.md` 3.2:* `State.newScratchDir` uses `os.MkdirTemp` (mode 0700) and `main`
+  defers `State.Cleanup`. The install directory is now named from the *source* directory
+  rather than the extraction path, which the scratch rename would otherwise have broken.
+  **Still open:** extraction copies *every* sibling file (including `.env` files with
+  secrets) into the scratch directory.
 
 - [ ] **`list` creates directories, with a broken mode** (`core/handlers.go:1262`).
   A read-only listing command shouldn't `MkdirAll` at all, and `0660` has no execute bit,

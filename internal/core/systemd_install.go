@@ -13,22 +13,22 @@ import (
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
 	var targetDir string
 
 	if quadctl.IsRootful {
-		targetDir = quadctl.QuadletRootPath
+		targetDir = quadctl.Config.QuadletRootPath
 	} else {
-		targetDir = quadctl.QuadletUserPath
+		targetDir = quadctl.Config.QuadletUserPath
 	}
 
 	// The rootless hint is worth keeping alongside the error itself: the usual cause is a
 	// generator directory owned by root that the user was told to install into.
 	rootlessHint := ""
-	if targetDir == quadctl.QuadletUserPath {
+	if targetDir == quadctl.Config.QuadletUserPath {
 		rootlessHint = "\nIf installing rootless quadlets to /etc/containers/systemd... or /usr/share/containers/systemd... you may need to grant your user write permissions to the target directory."
 	}
 
@@ -66,23 +66,27 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 	}
 	funcs = append(funcs, f)
 
-	// If there was a .quadlets file, all the quadlets were extracted to and/or copied to a temp directory.
-	// Replace the original search directory with the temp directory for copy operations involve in systemd create op
+	// Where the files to install are read from, and what the installed subdirectory is called.
+	// They differ when a .quadlets bundle was extracted: the files come from the run's scratch
+	// directory, but the install is still named after the user's directory. Naming it after
+	// the scratch directory would give every run a new, randomly named install directory that
+	// nothing - including HandleSystemdRemove and the stale-file prune - could find again.
 	searchDir := quadctl.SearchDir
+	installName := filepath.Base(quadctl.SearchDir)
 	if quadctl.DotQuadletsPath != "" {
 		searchDir = quadctl.DotQuadletsPath
 		//Check for and disallow use of symbolic links with .quadlets files
-		if quadctl.UseSymbolicLinks {
+		if quadctl.Config.UseSymbolicLinks {
 			return nil, fmt.Errorf("cannot use symbolic links with .quadlets files.\n  The individual quadlets in a .quadlets file must be extracted to a temp directory before install to systemd.\n  Cannot link to temp directory")
 		}
 	}
 
 	// Use links if configured to do so
-	if quadctl.UseSymbolicLinks {
+	if quadctl.Config.UseSymbolicLinks {
 		c.Output = append(c.Output, "Using symbolic links for installation.")
-		if quadctl.UseSubdirectories {
+		if quadctl.Config.UseSubdirectories {
 			// Link the entire source directory as a subdirectory in the target location to keep related quadlets together
-			dest := filepath.Join(targetDir, filepath.Base(searchDir))
+			dest := filepath.Join(targetDir, installName)
 			c.Output = append(c.Output, fmt.Sprintf("Linking directory %s -> %s", dest, searchDir))
 			f := func() error {
 				if err := os.Symlink(searchDir, dest); err != nil {
@@ -122,10 +126,10 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 	} else {
 		var destDropIn string
 		// If the user configured to use a subdirectory to organize quadlets, we create the directory and move files after podman quadlet install step.
-		if quadctl.UseSubdirectories {
+		if quadctl.Config.UseSubdirectories {
 			//Create the subdirectory at target location
-			dest := filepath.Join(targetDir, filepath.Base(searchDir))
-			c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", filepath.Base(searchDir), dest))
+			dest := filepath.Join(targetDir, installName)
+			c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", installName, dest))
 			f := func() error {
 				if err := util.CopyDir(searchDir, dest); err != nil {
 					return fmt.Errorf("copying %s to %s: %w", searchDir, dest, err)
@@ -151,8 +155,8 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 			if info, err := os.Stat(dropInDir); err == nil && info.IsDir() {
 
 				// Set dropInDir
-				if quadctl.UseSubdirectories {
-					destDropIn = filepath.Join(targetDir, filepath.Base(searchDir), filepath.Base(q.Filepath)+".d")
+				if quadctl.Config.UseSubdirectories {
+					destDropIn = filepath.Join(targetDir, installName, filepath.Base(q.Filepath)+".d")
 				} else {
 					destDropIn = filepath.Join(targetDir, filepath.Base(q.Filepath)+".d")
 				}
@@ -194,8 +198,8 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 
 	// Stop and remove any previously installed quadlet files that no longer exist
 	// in the source directory, so deletions are reflected the same way edits are.
-	if !quadctl.UseSymbolicLinks {
-		stale, err := pruneStaleSystemdFiles(quadctl, targetDir, searchDir)
+	if !quadctl.Config.UseSymbolicLinks {
+		stale, err := pruneStaleSystemdFiles(quadctl, targetDir, installName, searchDir)
 		if err != nil {
 			return nil, err
 		}
@@ -219,24 +223,26 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 // installed into a dedicated subdirectory per source directory (UseSubdirectories);
 // without that, the installed directory is shared across unrelated quadlet groups and
 // there's no reliable way to tell which leftover files belong to this one.
-func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) ([]Command, error) {
+// installName is the name of the subdirectory under targetDir that belongs to this source
+// directory; searchDir is where the files that should be there are read from. The two differ
+// when a .quadlets bundle was extracted into a scratch directory.
+func pruneStaleSystemdFiles(quadctl *util.State, targetDir, installName, searchDir string) ([]Command, error) {
 	commands := []Command{}
 
-	if !quadctl.UseSubdirectories {
+	if !quadctl.Config.UseSubdirectories {
 		return commands, nil
 	}
 
 	// Refuse to prune unless the install destination is a real subdirectory of the generator
-	// root that belongs to this source directory. A degenerate base name (".", "..", "/", or
+	// root that belongs to this source directory. A degenerate name (".", "..", "/", or
 	// empty) collapses dest onto targetDir itself, at which point every unrelated quadlet
 	// installed there looks stale and gets deleted.
-	base := filepath.Base(searchDir)
-	if base == "." || base == ".." || base == "" || base == string(filepath.Separator) {
-		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - cannot derive an install subdirectory from source path %q\n", searchDir)
+	if installName == "." || installName == ".." || installName == "" || installName == string(filepath.Separator) {
+		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - cannot derive an install subdirectory from source path %q\n", quadctl.SearchDir)
 		return commands, nil
 	}
 
-	dest := filepath.Join(targetDir, base)
+	dest := filepath.Join(targetDir, installName)
 	if filepath.Clean(dest) == filepath.Clean(targetDir) {
 		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - install directory %s is the quadlet generator root\n", dest)
 		return commands, nil
@@ -371,7 +377,7 @@ func readFileLine(path string, n int) (string, error) {
 // it could not convert into a systemd unit. Without this, a bad quadlet option or reference
 // fails silently during daemon-reload, and the first sign of trouble is a confusing "unit not
 // found" (or similar) from the systemctl start that follows.
-func validateQuadletGenerationCommand(quadctl *util.Quadctl, quadlets []*util.Quadlet, targetDir string) Command {
+func validateQuadletGenerationCommand(quadctl *util.State, quadlets []*util.Quadlet, targetDir string) Command {
 	c := NewCommand("Validating quadlet definitions")
 	// This is a quick, silent-on-success check; skip the spinner so a failure (which exits
 	// the process directly, matching how other fatal errors in this function are handled)
@@ -433,12 +439,12 @@ func validateQuadletGenerationCommand(quadctl *util.Quadctl, quadlets []*util.Qu
 	return c
 }
 
-func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 	var targetDir string
 	if quadctl.IsRootful {
-		targetDir = quadctl.QuadletRootPath
+		targetDir = quadctl.Config.QuadletRootPath
 	} else {
-		targetDir = quadctl.QuadletUserPath
+		targetDir = quadctl.Config.QuadletUserPath
 	}
 
 	commands := []Command{}
@@ -462,8 +468,8 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 
 	//If targetDir exists, remove files.
 	if info, err := os.Stat(targetDir); err == nil && info.IsDir() {
-		if quadctl.UseSymbolicLinks {
-			if quadctl.UseSubdirectories {
+		if quadctl.Config.UseSymbolicLinks {
+			if quadctl.Config.UseSubdirectories {
 				//remove link to directory
 				link := filepath.Join(targetDir, filepath.Base(quadctl.SearchDir))
 				c.Output = append(c.Output, fmt.Sprintf("Removing symbolic link: %s", link))
@@ -496,7 +502,7 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 				}
 			}
 		} else {
-			if quadctl.UseSubdirectories {
+			if quadctl.Config.UseSubdirectories {
 				//remove directory and all files within
 				dest := filepath.Join(targetDir, filepath.Base(quadctl.SearchDir))
 				c.Output = append(c.Output, fmt.Sprintf("Removing directory and files at: %s", dest))
@@ -522,7 +528,7 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 
 		//Expressly remove volume and network resources that might be left behind
 		for _, q := range quadlets {
-			if q.Type == ".volume" && quadctl.IsRemoveVolumes {
+			if q.Type == ".volume" && quadctl.Config.IsRemoveVolumes {
 				c.Output = append(c.Output, fmt.Sprintf("Removing volume %s", q.ID))
 				var fn func()
 				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
@@ -537,7 +543,7 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 				}
 				funcs = append(funcs, fn)
 			}
-			if q.Type == ".network" && quadctl.IsRemoveNetworks {
+			if q.Type == ".network" && quadctl.Config.IsRemoveNetworks {
 				c.Output = append(c.Output, fmt.Sprintf("Removing network %s", q.ID))
 				var fn func()
 				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.

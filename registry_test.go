@@ -9,9 +9,9 @@ import (
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func testRegistry(t *testing.T) (*registry, *util.Quadctl) {
+func testRegistry(t *testing.T) (*registry, *util.State) {
 	t.Helper()
-	quadctl := &util.Quadctl{ListDepth: defaultListDepth}
+	quadctl := &util.State{ListDepth: defaultListDepth}
 	r := newRegistry(quadctl)
 	// Usage goes to stderr; tests that provoke it only care that parsing failed.
 	r.global.SetOutput(io.Discard)

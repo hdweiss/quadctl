@@ -10,20 +10,20 @@ import (
 	"github.com/jedib0t/go-pretty/v6/list"
 )
 
-func HandleList(quadctl *util.Quadctl) error {
+func HandleList(quadctl *util.State) error {
 
 	if !quadctl.IsListAll {
-		absPath := quadctl.QuadletSrcPath
+		absPath := quadctl.Config.QuadletSrcPath
 		if quadctl.IsSystemd {
 			if quadctl.IsRootful {
-				absPath = quadctl.QuadletRootPath
+				absPath = quadctl.Config.QuadletRootPath
 			} else {
-				absPath = quadctl.QuadletUserPath
+				absPath = quadctl.Config.QuadletUserPath
 			}
 		}
 		return listQuadlets(absPath, quadctl.ListDepth)
 	} else {
-		for _, path := range []string{quadctl.QuadletSrcPath, quadctl.QuadletRootPath, quadctl.QuadletUserPath} {
+		for _, path := range []string{quadctl.Config.QuadletSrcPath, quadctl.Config.QuadletRootPath, quadctl.Config.QuadletUserPath} {
 			if err := listQuadlets(path, quadctl.ListDepth); err != nil {
 				return fmt.Errorf("listing quadlets in %s: %w", path, err)
 			}

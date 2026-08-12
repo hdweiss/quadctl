@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"text/template"
 
 	"github.com/fkmiec/quadctl/internal/core"
 	"github.com/fkmiec/quadctl/internal/schema"
@@ -17,7 +16,7 @@ import (
 const defaultListDepth = 2
 
 var (
-	quadctl *util.Quadctl
+	quadctl *util.State
 )
 
 func main() {
@@ -32,14 +31,26 @@ func main() {
 // it does with an empty search directory, and which handler runs.
 func run() int {
 	initState() //Create the initial quadctl state object
+	// The scratch directories a .quadlets bundle is extracted into are read by the systemd
+	// install commands, so they can only go once every command has run.
+	defer quadctl.Cleanup()
 
 	registry := newRegistry(quadctl)
 	if err := registry.parseGlobalFlags(os.Args[1:]); err != nil {
 		return fail(err)
 	}
-	if err := util.InitConfig(quadctl); err != nil {
+
+	cfg, err := util.LoadConfig(quadctl.IsRootful)
+	if err != nil {
 		return fail(err)
 	}
+	quadctl.Config = cfg
+	// systemd.enabled makes systemd mode the default. It is applied after the flags because
+	// there is no way to turn it back off from the CLI yet (TODO.md section 3).
+	if cfg.SystemdEnabled {
+		quadctl.IsSystemd = true
+	}
+
 	cmd, err := registry.processSubcommand(quadctl)
 	if err != nil {
 		return fail(err)
@@ -95,56 +106,34 @@ func fail(err error) int {
 	return 1
 }
 
+// initState builds the run state. Everything the user configured comes later, from
+// util.LoadConfig - what is set here is either derived from the process itself or a default
+// the flags may still override.
 func initState() {
-
-	quadctl = &util.Quadctl{
-		QuadletSchemas:    map[string]map[string]schema.SchemaOption{},
-		Config:            map[string]string{},
-		Runner:            util.ExecRunner{},
-		IsRootful:         false,
-		IsSystemd:         false,
-		IsPrintOnly:       false,
-		IsVerbose:         false,
-		IsFile:            false,
-		ListDepth:         defaultListDepth,
-		Subcommand:        "",
-		SearchDir:         "",
-		PodmanArgs:        "",
-		RunCmd:            "",
-		QuadletSrcPath:    "",    // Path to the user's source directory containing quadlet folders or files
-		UseSubdirectories: true,  // Default to installing quadlets in a subdirectory to keep them organized
-		UseSymbolicLinks:  false, // Default to copying files for installation to avoid potential issues with source files being moved or deleted, but can be configured to use symbolic links for a more dynamic setup
-		IsReloadSystemd:   true,  // Default to reloading systemd after installation to apply changes immediately
-		IsRemoveVolumes:   true,  // Default to removing volumes on uninstall since they are often not needed after uninstall and can be left behind if not removed, but can be configured to keep volumes for data persistence.
-		IsRemoveNetworks:  true,  // Default to removing networks on uninstall since they are often not needed after uninstall and can be left behind if not removed, but can be configured to keep volumes for data persistence.
-		QuadletRootPath:   "/etc/containers/systemd",
-		QuadletUserPath:   "/etc/containers/systemd/users",
-	}
-	quadctl.SystemdStartTmpl = template.Must(template.New("systemdStart").Parse("systemctl {{.user}} start"))
-	quadctl.SystemdStopTmpl = template.Must(template.New("systemdStop").Parse("systemctl {{.user}} stop"))
-	quadctl.SystemdStatusTmpl = template.Must(template.New("systemdStatus").Parse("systemctl {{.user}} status"))
-	quadctl.SystemdReloadTmpl = template.Must(template.New("systemdReload").Parse("systemctl {{.user}} daemon-reload"))
-	quadctl.SystemdLogsTmpl = template.Must(template.New("systemdLogs").Parse("journalctl {{.user}} -xe"))
-
-	// Determine if running as root
-	if os.Geteuid() == 0 {
-		quadctl.IsRootful = true
+	quadctl = &util.State{
+		Config:         util.DefaultConfig(),
+		QuadletSchemas: map[string]map[string]schema.SchemaOption{},
+		Runner:         util.ExecRunner{},
+		ListDepth:      defaultListDepth,
+		// Rootful is a property of how quadctl was invoked, not a flag: it decides which
+		// generator directory is used and whether systemctl gets --user.
+		IsRootful: os.Geteuid() == 0,
 	}
 }
 
-func displayQuadletSelector(quadctl *util.Quadctl) error {
-	quadletDirs, err := util.ListSubdirectories(quadctl.QuadletSrcPath)
+func displayQuadletSelector(quadctl *util.State) error {
+	quadletDirs, err := util.ListSubdirectories(quadctl.Config.QuadletSrcPath)
 	if err != nil {
 		return err
 	}
 
 	if len(quadletDirs) == 0 {
-		return fmt.Errorf("no quadlet directories found in %s", quadctl.QuadletSrcPath)
+		return fmt.Errorf("no quadlet directories found in %s", quadctl.Config.QuadletSrcPath)
 	}
 	selected, err := util.SelectFromList(quadletDirs)
 	if err != nil {
 		return err
 	}
-	quadctl.SearchDir = filepath.Join(quadctl.QuadletSrcPath, selected)
+	quadctl.SearchDir = filepath.Join(quadctl.Config.QuadletSrcPath, selected)
 	return nil
 }

@@ -24,7 +24,7 @@ func resourceExists(runner util.Runner, qType string, name string) bool {
 	return runCommandSilently(runner, inspectCmd) == nil
 }
 
-func listSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([][]string, error) {
+func listSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}},{{.Path}},{{.UnitName}},{{.Status}}"}
 	output, err := runCommandCapture(quadctl.Runner, cmd)
 	if err != nil {
@@ -63,7 +63,7 @@ func listSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadle
 // detect that it still needs to be installed. `systemctl is-active` alone can't be
 // used for that check since it reports "inactive" both for a stopped-but-installed
 // unit and for a unit that was never installed at all.
-func listInstalledQuadletsViaSystemctl(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([][]string, error) {
+func listInstalledQuadletsViaSystemctl(quadctl *util.State, quadlets []*util.Quadlet) ([][]string, error) {
 	var info [][]string
 	for _, q := range quadlets {
 		loadArgs := []string{"systemctl"}

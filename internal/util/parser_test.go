@@ -94,7 +94,7 @@ func TestParseIniFileQuotedValue(t *testing.T) {
 }
 
 func TestDiscoverAndParseQuadletsOrdersDependenciesFirst(t *testing.T) {
-	quadctl := &Quadctl{SearchDir: fixtures}
+	quadctl := &State{SearchDir: fixtures}
 	ordered, err := InitQuadlets(quadctl)
 	if err != nil {
 		t.Fatalf("InitQuadlets: %v", err)
@@ -123,7 +123,7 @@ func TestDiscoverAndParseQuadletsOrdersDependenciesFirst(t *testing.T) {
 func TestInitQuadletsIsDeterministic(t *testing.T) {
 	var first []string
 	for i := range 20 {
-		quadctl := &Quadctl{SearchDir: fixtures}
+		quadctl := &State{SearchDir: fixtures}
 		ordered, err := InitQuadlets(quadctl)
 		if err != nil {
 			t.Fatal(err)
@@ -146,7 +146,7 @@ func TestInitQuadletsIsDeterministic(t *testing.T) {
 // dependencies, and names an error rather than silently running against everything.
 func TestInitQuadletsFileFilter(t *testing.T) {
 	t.Run("selects the file and its dependencies", func(t *testing.T) {
-		quadctl := &Quadctl{SearchDir: fixtures, IsFile: true, PathArg: "db.container"}
+		quadctl := &State{SearchDir: fixtures, IsFile: true, PathArg: "db.container"}
 		ordered, err := InitQuadlets(quadctl)
 		if err != nil {
 			t.Fatal(err)
@@ -157,14 +157,14 @@ func TestInitQuadletsFileFilter(t *testing.T) {
 	})
 
 	t.Run("unknown file is an error", func(t *testing.T) {
-		quadctl := &Quadctl{SearchDir: fixtures, IsFile: true, PathArg: "nope.container"}
+		quadctl := &State{SearchDir: fixtures, IsFile: true, PathArg: "nope.container"}
 		if _, err := InitQuadlets(quadctl); err == nil {
 			t.Error("expected an error for a file that isn't among the parsed quadlets")
 		}
 	})
 
 	t.Run("missing path argument is an error", func(t *testing.T) {
-		quadctl := &Quadctl{SearchDir: fixtures, IsFile: true}
+		quadctl := &State{SearchDir: fixtures, IsFile: true}
 		if _, err := InitQuadlets(quadctl); err == nil {
 			t.Error("expected an error when -f is given without a path")
 		}
@@ -177,7 +177,7 @@ func TestExtractDependenciesMissingPod(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "orphan.container"), "[Container]\nImage=alpine\nPod=missing.pod\n")
 
-	quadctl := &Quadctl{SearchDir: dir}
+	quadctl := &State{SearchDir: dir}
 	_, err := InitQuadlets(quadctl)
 	if err == nil {
 		t.Fatal("expected an error for a Pod= that names no quadlet in the directory")
@@ -205,11 +205,10 @@ func write(t *testing.T, path, content string) {
 // TestParseDotQuadlets covers the single-file bundle format: each section between "---"
 // separators is extracted into the file its "# FileName=" marker names.
 func TestParseDotQuadlets(t *testing.T) {
-	tempDir, err := parseDotQuadlets(filepath.Join("testdata", "dotquadlets", "bundle.quadlets"))
-	if err != nil {
+	tempDir := t.TempDir()
+	if err := parseDotQuadlets(filepath.Join("testdata", "dotquadlets", "bundle.quadlets"), tempDir); err != nil {
 		t.Fatalf("parseDotQuadlets: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(tempDir) })
 
 	for name, wantKey := range map[string]string{
 		"cache.container":  "ContainerName",

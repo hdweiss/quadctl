@@ -9,7 +9,7 @@ import (
 
 // handleCreate generates and executes 'podman create' commands for all resources, but first checks if they exist and prints warnings if they do,
 // suggesting to run 'remove' first if intent is to re-create. It also handles special cases like auto-restart configuration warnings.
-func HandleCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 

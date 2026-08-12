@@ -6,7 +6,7 @@ import (
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -24,7 +24,7 @@ func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, e
 		rmCmd := []string{"podman"}
 		switch resType {
 		case ".kube":
-			if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || kubeDownForce(q) {
+			if quadctl.Config.IsRemoveVolumes || quadctl.Config.IsRemoveNetworks || kubeDownForce(q) {
 				rmCmd = append(rmCmd, "play", "kube", "--down", "--force", q.KubernetesYaml)
 			} else {
 				rmCmd = append(rmCmd, "play", "kube", "--down", q.KubernetesYaml)

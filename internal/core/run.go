@@ -9,7 +9,7 @@ import (
 )
 
 // Call handleCreate. Then start.
-func HandleRun(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleRun(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	//Check how many .container quadlets there are and how many with --detach or -d podman args.
 	//If more than one .container and more than one of them don't have --detach or -d,

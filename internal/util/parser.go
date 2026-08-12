@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"text/template"
 
 	"github.com/fkmiec/quadctl/internal/schema"
 	yaml "github.com/goccy/go-yaml"
@@ -25,39 +24,67 @@ var (
 	}
 )
 
-type Quadctl struct {
+// State is one run of one subcommand: the flags it was given, the directory it is working
+// on, and what has been discovered so far. It is threaded through everything below main and
+// is expected to change as the run proceeds - which is exactly why the user's configuration
+// is not part of it but sits behind Config, read once and left alone (PLAN.md 3.2).
+type State struct {
+	// Config is the loaded quadctl.ini. Treat it as read-only: it describes the machine, not
+	// this invocation, and handlers that write to it would change the meaning of the next
+	// directory in the same run.
+	Config *Config
+
 	QuadletSchemas map[string]map[string]schema.SchemaOption
-	Config         map[string]string
 	Runner         Runner // Executes every external command; swapped for a fake in tests
 
-	IsRootful         bool
-	IsSystemd         bool
-	IsPrintOnly       bool
-	IsVerbose         bool
-	IsFile            bool
-	ListDepth         int
-	IsListAll         bool
-	IsShowAll         bool
-	IsLongStatus      bool
-	Subcommand        string
-	SearchDir         string
-	PathArg           string // Positional path argument given to the subcommand, if any
-	PodmanArgs        string
-	RunCmd            string
-	DotQuadletsPath   string
-	QuadletSrcPath    string // Path to the user's source directory containing quadlet folders or files
-	UseSubdirectories bool   // Default to installing quadlets in a subdirectory to keep them organized
-	UseSymbolicLinks  bool   // Default to copying files for installation to avoid potential issues with source files being moved or deleted, but can be configured to use symbolic links for a more dynamic setup
-	IsReloadSystemd   bool   // Default to reloading systemd after installation to apply changes immediately
-	IsRemoveVolumes   bool   // Default to removing volumes on uninstall since they are often not needed after uninstall and can be left behind if not removed, but can be configured to keep volumes for data persistence.
-	IsRemoveNetworks  bool   // Default to removing networks on uninstall since they are often not needed after uninstall and can be left behind if not removed, but can be configured to keep volumes for data persistence.
-	SystemdStartTmpl  *template.Template
-	SystemdStopTmpl   *template.Template
-	SystemdStatusTmpl *template.Template
-	SystemdReloadTmpl *template.Template
-	SystemdLogsTmpl   *template.Template
-	QuadletRootPath   string
-	QuadletUserPath   string
+	IsRootful    bool // Derived from the effective uid, not a flag
+	IsSystemd    bool
+	IsPrintOnly  bool
+	IsVerbose    bool
+	IsFile       bool
+	ListDepth    int
+	IsListAll    bool
+	IsShowAll    bool
+	IsLongStatus bool
+	Subcommand   string
+	SearchDir    string
+	PathArg      string // Positional path argument given to the subcommand, if any
+	PodmanArgs   string
+	RunCmd       string
+
+	// DotQuadletsPath is the scratch directory the current search directory's .quadlets
+	// bundle was extracted into, or "" when that directory had none. It is recomputed for
+	// every directory scanned: leaving one directory's value in place is what made
+	// InitAllQuadlets install the previous directory's extracted files.
+	DotQuadletsPath string
+
+	// scratchDirs are every scratch directory created during this run, removed by Cleanup.
+	// They outlive parsing because the systemd install commands copy out of them, so they
+	// can only be dropped once the run is over.
+	scratchDirs []string
+}
+
+// newScratchDir makes a private temporary directory for this run and records it so Cleanup
+// can remove it. The old code derived the path from the source directory's name, so two runs
+// - or two users - collided on it, and it began by RemoveAll'ing whatever was already there.
+func (s *State) newScratchDir(purpose string) (string, error) {
+	dir, err := os.MkdirTemp("", "quadctl-"+purpose+"-")
+	if err != nil {
+		return "", fmt.Errorf("creating scratch directory: %w", err)
+	}
+	s.scratchDirs = append(s.scratchDirs, dir)
+	return dir, nil
+}
+
+// Cleanup removes the scratch directories this run created. Safe to call more than once, and
+// on a State that never made any. main defers it; nothing else should call it, since the
+// systemd install commands read from these directories when they run.
+func (s *State) Cleanup() {
+	for _, dir := range s.scratchDirs {
+		_ = os.RemoveAll(dir)
+	}
+	s.scratchDirs = nil
+	s.DotQuadletsPath = ""
 }
 
 // Quadlet represents a parsed Quadlet file and its relationships.
@@ -80,7 +107,7 @@ type Option struct {
 	Value string
 }
 
-func InitQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
+func InitQuadlets(quadctl *State) ([]*Quadlet, error) {
 	// Discover, parse and resolve dependencies
 	quadlets, err := discoverAndParseQuadlets(quadctl, quadctl.SearchDir)
 	if err != nil {
@@ -130,10 +157,10 @@ func InitQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
 // configured quadlet source path, returning the combined list. Used by commands
 // like 'ps' that report on all quadlets managed by quadctl when no specific
 // quadlet name or path was given on the command line.
-func InitAllQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
-	dirs, err := ListSubdirectories(quadctl.QuadletSrcPath)
+func InitAllQuadlets(quadctl *State) ([]*Quadlet, error) {
+	dirs, err := ListSubdirectories(quadctl.Config.QuadletSrcPath)
 	if err != nil {
-		return nil, fmt.Errorf("listing quadlets in %s: %w", quadctl.QuadletSrcPath, err)
+		return nil, fmt.Errorf("listing quadlets in %s: %w", quadctl.Config.QuadletSrcPath, err)
 	}
 
 	origSearchDir := quadctl.SearchDir
@@ -148,7 +175,7 @@ func InitAllQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
 
 	var all []*Quadlet
 	for _, d := range dirs {
-		quadctl.SearchDir = filepath.Join(quadctl.QuadletSrcPath, d)
+		quadctl.SearchDir = filepath.Join(quadctl.Config.QuadletSrcPath, d)
 		quadlets, err := InitQuadlets(quadctl)
 		if err != nil {
 			return nil, err
@@ -161,7 +188,7 @@ func InitAllQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
 
 // --- PARSING AND GENERATION LOGIC ---
 
-func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Quadlet, error) {
+func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Quadlet, error) {
 
 	quadlets := make(map[string]*Quadlet)
 
@@ -178,18 +205,25 @@ func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Q
 		return nil, err
 	}
 
+	// Answered fresh for every directory: a value left over from the previous one is what
+	// made InitAllQuadlets copy into, and install from, the previous directory's extraction.
+	quadctl.DotQuadletsPath = ""
+
 	for _, f := range files {
 		//fmt.Println(f.Name(), f.IsDir())
 		path := filepath.Join(searchDir, f.Name())
 		ext := filepath.Ext(path)
 		if ".quadlets" == ext {
-			//parseDotQuadlets extracts individual quadlets into separate files in a temp directory
-			tempDir, err := parseDotQuadlets(path)
+			//parseDotQuadlets extracts individual quadlets into separate files in a scratch directory
+			scratch, err := quadctl.newScratchDir("quadlets")
 			if err != nil {
 				return nil, err
 			}
+			if err := parseDotQuadlets(path, scratch); err != nil {
+				return nil, err
+			}
 			//Save the DotQuadletsPath (location .quadlets file was extracted to) for systemd install
-			quadctl.DotQuadletsPath = tempDir
+			quadctl.DotQuadletsPath = scratch
 		}
 	}
 
@@ -254,30 +288,14 @@ func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Q
 	return quadlets, nil
 }
 
-// Split quadlets by "---" on a separate new line and find filenames specified as "# FileName=<name>"
-func parseDotQuadlets(path string) (string, error) {
-	// Extract the .quadlets file into a temp directory with the same name as the original quadctl.SearchDir in the system temp directory.
-	id := filepath.Base(filepath.Dir(path))
-	tempDir := filepath.Join(os.TempDir(), id)
-
-	//fmt.Printf("Temp Dir for .quadlet: %s\n", tempDir)
-
-	// Remove tempDir, if exists already, so that no old files remain from prior runs.
-	err := os.RemoveAll(tempDir)
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Printf("Failed to remove existing temp directory: %v\n", err)
-		return "", err
-	}
-
-	// Create temp directory
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating temp directory: %v\n", err)
-		return "", err
-	}
-
+// parseDotQuadlets splits a .quadlets bundle into the individual quadlet files it holds,
+// writing them into destDir. Sections are separated by "---" on a line of its own and named
+// by a "# FileName=<name>" marker. destDir is a scratch directory owned by the run (see
+// State.newScratchDir), so this only ever writes into a directory it was handed.
+func parseDotQuadlets(path, destDir string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer file.Close()
 
@@ -301,9 +319,9 @@ func parseDotQuadlets(path string) (string, error) {
 		if "---" == strings.TrimSpace(line) {
 			baseQuadletFilename = checkExtension(baseQuadletFilename, quadletText)
 
-			err := WriteFile(filepath.Join(tempDir, baseQuadletFilename), quadletText)
+			err := WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
 			if err != nil {
-				return "", err
+				return err
 			}
 			baseQuadletFilename = ""
 			quadletText = ""
@@ -312,20 +330,20 @@ func parseDotQuadlets(path string) (string, error) {
 		quadletText += line + "\n"
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("reading .quadlets file %s: %w", path, err)
+		return fmt.Errorf("reading .quadlets file %s: %w", path, err)
 	}
 
 	// Save file if reach end of .quadlet file with a filename and quadlet text
 	if len(baseQuadletFilename) > 0 && len(quadletText) > 0 {
 		//fmt.Println("SAVING FINAL FILE...")
 		baseQuadletFilename = checkExtension(baseQuadletFilename, quadletText)
-		err := WriteFile(filepath.Join(tempDir, baseQuadletFilename), quadletText)
+		err := WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
 		if err != nil {
-			return "", err
+			return err
 		}
 	}
 
-	return tempDir, nil
+	return nil
 }
 
 // Add quadlet file extension if omitted in user's .quadlets file. Podman docs had examples with extension and later without, so handle both.

@@ -21,7 +21,7 @@ const (
 // for quadlets. The argument may be a directory or a single quadlet file, given either
 // relative to the working directory or as a name under quadlet.src.path; with no argument
 // at all the working directory is used.
-func ResolveSearchDir(quadctl *Quadctl, path string) (string, error) {
+func ResolveSearchDir(quadctl *State, path string) (string, error) {
 
 	// Determine search directory (optional path or CWD ... optional path may be relative to CWD or quadlets_path from config)
 	// If no path is specified, use the current working directory
@@ -42,7 +42,7 @@ func ResolveSearchDir(quadctl *Quadctl, path string) (string, error) {
 			}
 		} else {
 			// Otherwise, look for specified directory path relative to the quadlets path
-			dir = filepath.Join(quadctl.QuadletSrcPath, path)
+			dir = filepath.Join(quadctl.Config.QuadletSrcPath, path)
 			// If the path is not found relative to the quadlets path or is not a directory, it's an error
 			info, err = os.Stat(dir)
 			if err == nil {

@@ -25,7 +25,7 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 //
 // Regenerate with: go test ./internal/core/ -run TestGenerateCommandsGolden -update
 func TestGenerateCommandsGolden(t *testing.T) {
-	quadctl := &util.Quadctl{
+	quadctl := &util.State{
 		Runner:         &util.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 		SearchDir:      "testdata/stack",
@@ -122,10 +122,12 @@ func TestKubeDownForce(t *testing.T) {
 // TestGenerateStopCommandKubeNoPanic drives the two call sites that used to index the nil
 // slice, with the config that removed the || short-circuit hiding it.
 func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
-	quadctl := &util.Quadctl{
-		Runner:           &util.RecordingRunner{},
-		IsRemoveVolumes:  false,
-		IsRemoveNetworks: false,
+	cfg := util.DefaultConfig()
+	cfg.IsRemoveVolumes = false
+	cfg.IsRemoveNetworks = false
+	quadctl := &util.State{
+		Runner: &util.RecordingRunner{},
+		Config: cfg,
 	}
 	q := &util.Quadlet{
 		ID:             "app",
@@ -152,7 +154,7 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 // TestGenerateRunCommandWithoutCreate covers the Phase 0.3 slice panic: generateRunCommand
 // used to do createCmd[3:] on whatever generateCreateCommand handed back, including nothing.
 func TestGenerateRunCommandWithoutCreate(t *testing.T) {
-	quadctl := &util.Quadctl{
+	quadctl := &util.State{
 		Runner:         &util.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 	}
@@ -171,7 +173,7 @@ func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 // TestGenerateStartupCommandKubeIsClean covers Phase 0.6: the generator used to print a
 // half-built command to stdout on every .kube start.
 func TestGenerateStartupCommandKubeIsClean(t *testing.T) {
-	quadctl := &util.Quadctl{
+	quadctl := &util.State{
 		Runner:         &util.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 	}
@@ -201,7 +203,7 @@ func TestExecBecomesArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	quadctl := &util.Quadctl{
+	quadctl := &util.State{
 		Runner:         &util.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 		SearchDir:      dir,
@@ -238,7 +240,7 @@ func TestPodmanArgsSplitOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	quadctl := &util.Quadctl{
+	quadctl := &util.State{
 		Runner:         &util.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 		SearchDir:      dir,

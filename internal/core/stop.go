@@ -6,7 +6,7 @@ import (
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func HandleStop(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleStop(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 

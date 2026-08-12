@@ -49,7 +49,7 @@ func TestGetSearchDir(t *testing.T) {
 		{"missing", "nope", "", true},
 	}
 
-	quadctl := &Quadctl{QuadletSrcPath: src}
+	quadctl := &State{Config: &Config{QuadletSrcPath: src}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ResolveSearchDir(quadctl, tt.arg)

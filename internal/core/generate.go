@@ -10,7 +10,7 @@ import (
 )
 
 // generateCreateCommand creates the base 'podman ... create' string.
-func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []string) {
+func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []string) {
 	var warnings []string
 	var cmd []string
 
@@ -233,7 +233,7 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 }
 
 // generateStartupCommand creates necessary 'start' commands based on existence.
-func generateStartupCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []string) {
+func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []string) {
 	cmd := []string{}
 	warnings := []string{}
 	resName := q.ID
@@ -302,7 +302,7 @@ func generateStartupCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, [
 }
 
 // generateStartupCommand creates necessary 'start' commands based on existence.
-func generateRunCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []string) {
+func generateRunCommand(quadctl *util.State, q *util.Quadlet) ([]string, []string) {
 
 	if q.Type == ".kube" {
 		// For kube type, just reuse the generateStartupCommand for kube types.
@@ -323,7 +323,7 @@ func generateRunCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []str
 	return runCmd, warnings
 }
 
-func generateStopCommand(quadctl *util.Quadctl, q *util.Quadlet) []string {
+func generateStopCommand(quadctl *util.State, q *util.Quadlet) []string {
 	cmd := []string{}
 	resName := q.ID
 	if q.Type == ".container" {
@@ -334,7 +334,7 @@ func generateStopCommand(quadctl *util.Quadctl, q *util.Quadlet) []string {
 
 	switch q.Type {
 	case ".kube":
-		if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || kubeDownForce(q) {
+		if quadctl.Config.IsRemoveVolumes || quadctl.Config.IsRemoveNetworks || kubeDownForce(q) {
 			cmd = append(cmd, []string{"podman", "play", "kube", "--down", "--force", q.KubernetesYaml}...)
 		} else {
 			cmd = append(cmd, []string{"podman", "play", "kube", "--down", q.KubernetesYaml}...)

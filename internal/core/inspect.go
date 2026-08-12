@@ -11,7 +11,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
+func HandlePS(quadctl *util.State, quadlets []*util.Quadlet) error {
 
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
@@ -47,7 +47,7 @@ func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
 	return nil
 }
 
-func HandleStats(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
+func HandleStats(quadctl *util.State, quadlets []*util.Quadlet) error {
 
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
@@ -178,7 +178,7 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 	return nil
 }
 
-func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	var commands []Command
 

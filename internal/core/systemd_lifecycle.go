@@ -11,7 +11,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -39,7 +39,7 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Comm
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
 
-	if err = quadctl.SystemdStartTmpl.Execute(&buf, data); err != nil {
+	if err = quadctl.Config.SystemdStartTmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("executing systemd start template: %w", err)
 	}
 
@@ -58,14 +58,14 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Comm
 	return commands, nil
 }
 
-func HandleSystemdStop(quadctl *util.Quadctl, quadlets []*util.Quadlet, stopNetAndVol bool) ([]Command, error) {
+func HandleSystemdStop(quadctl *util.State, quadlets []*util.Quadlet, stopNetAndVol bool) ([]Command, error) {
 
 	commands := []Command{}
 
 	// Stop the systemd services
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
-	if err := quadctl.SystemdStopTmpl.Execute(&buf, data); err != nil {
+	if err := quadctl.Config.SystemdStopTmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("executing systemd stop template: %w", err)
 	}
 
@@ -93,14 +93,14 @@ func HandleSystemdStop(quadctl *util.Quadctl, quadlets []*util.Quadlet, stopNetA
 	return commands, nil
 }
 
-func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdStatus(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	if quadctl.IsLongStatus {
 		commands := []Command{}
 
 		var buf bytes.Buffer
 		data := systemdTemplateData(quadctl)
-		if err := quadctl.SystemdStatusTmpl.Execute(&buf, data); err != nil {
+		if err := quadctl.Config.SystemdStatusTmpl.Execute(&buf, data); err != nil {
 			return nil, fmt.Errorf("executing systemd status template: %w", err)
 		}
 		args := util.ParseFields(buf.String())
@@ -123,7 +123,7 @@ func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 	}
 }
 
-func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -152,7 +152,7 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Comma
 
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
-	if err := quadctl.SystemdLogsTmpl.Execute(&buf, data); err != nil {
+	if err := quadctl.Config.SystemdLogsTmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("executing systemd logs template: %w", err)
 	}
 
@@ -170,10 +170,10 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Comma
 	return commands, nil
 }
 
-func HandleSystemdReload(quadctl *util.Quadctl) ([]Command, error) {
+func HandleSystemdReload(quadctl *util.State) ([]Command, error) {
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
-	if err := quadctl.SystemdReloadTmpl.Execute(&buf, data); err != nil {
+	if err := quadctl.Config.SystemdReloadTmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("executing systemd reload template: %w", err)
 	}
 	command := util.ParseFields(buf.String())
@@ -185,7 +185,7 @@ func HandleSystemdReload(quadctl *util.Quadctl) ([]Command, error) {
 // systemdTemplateData builds the data passed to the configurable systemd command templates.
 // The "user" key is always present, empty when rootful: text/template renders a missing map
 // key as the literal "<no value>".
-func systemdTemplateData(quadctl *util.Quadctl) map[string]string {
+func systemdTemplateData(quadctl *util.State) map[string]string {
 	user := ""
 	if !quadctl.IsRootful {
 		user = "--user"
@@ -193,7 +193,7 @@ func systemdTemplateData(quadctl *util.Quadctl) map[string]string {
 	return map[string]string{"user": user}
 }
 
-func displayListOfSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
+func displayListOfSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util.Quadlet) error {
 	info, err := listSystemdInstalledQuadlets(quadctl, quadlets)
 	if err != nil {
 		return err
