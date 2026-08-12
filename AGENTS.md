@@ -6,7 +6,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 `quadctl` is a compose-like CLI for running Podman Quadlets, either directly via `podman` or installed into systemd's quadlet generator directories. It's a single Go module with no external services — read `README.md` for the full user-facing feature set (directory layout conventions, `.quadlets`/`.kube` file handling, symbolic-link install mode, etc.) before making behavioral changes, since a lot of nuance lives there rather than in code comments.
 
-`TODO.md` (known defects), `PLAN.md` (the phased refactor and its ordering constraints) and `FEATURES.md` (ideas, not scheduled) are the working docs. Check `TODO.md` before reporting a bug as new.
+The working docs live in `docs/`: `TODO.md` (known defects), `PLAN.md` (the phased refactor and its ordering constraints) and `FEATURES.md` (ideas, not scheduled). They are referred to by bare filename throughout this file and in code comments. Check `TODO.md` before reporting a bug as new.
 
 ## Running the binary safely
 
