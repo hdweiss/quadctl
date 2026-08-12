@@ -1,4 +1,4 @@
-package core
+package systemd
 
 import (
 	"bufio"
@@ -10,14 +10,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/command"
 	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
 )
 
-func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
+func HandleCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
 
-	commands := []Command{}
+	commands := []command.Command{}
 
 	var targetDir string
 
@@ -47,10 +48,10 @@ func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 		return nil, fmt.Errorf("quadlet path %s is not writable. Ensure the directory is writable and try again%s", targetDir, rootlessHint)
 	}
 
-	c := NewCommand(fmt.Sprintf("Installing quadlets to %s", targetDir))
+	c := command.NewCommand(fmt.Sprintf("Installing quadlets to %s", targetDir))
 	if quadctl.IsVerbose {
-		c.PreFn = func(c *Command) {}
-		c.PostFn = func(c *Command) {}
+		c.PreFn = func(c *command.Command) {}
+		c.PostFn = func(c *command.Command) {}
 	}
 
 	// Systemd create is mostly file operations.
@@ -72,7 +73,7 @@ func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 	// They differ when a .quadlets bundle was extracted: the files come from the run's scratch
 	// directory, but the install is still named after the user's directory. Naming it after
 	// the scratch directory would give every run a new, randomly named install directory that
-	// nothing - including HandleSystemdRemove and the stale-file prune - could find again.
+	// nothing - including HandleRemove and the stale-file prune - could find again.
 	searchDir := quadctl.SearchDir
 	installName := filepath.Base(quadctl.SearchDir)
 	if quadctl.DotQuadletsPath != "" {
@@ -171,7 +172,7 @@ func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 	}
 
 	// Custom run function that will, when executed by runCommands(), execute the anonymous functions created above.
-	c.RunFn = func(c *Command) {
+	c.RunFn = func(c *command.Command) {
 		for _, f := range funcs {
 			if err := f(); err != nil {
 				c.Error = err
@@ -205,7 +206,7 @@ func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 	}
 
 	// Reload systemd to recognize the new quadlet services
-	reload, err := HandleSystemdReload(quadctl)
+	reload, err := HandleReload(quadctl)
 	if err != nil {
 		return nil, err
 	}
@@ -224,8 +225,8 @@ func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 // installName is the name of the subdirectory under targetDir that belongs to this source
 // directory; searchDir is where the files that should be there are read from. The two differ
 // when a .quadlets bundle was extracted into a scratch directory.
-func pruneStaleSystemdFiles(quadctl *quadlet.State, targetDir, installName, searchDir string) ([]Command, error) {
-	commands := []Command{}
+func pruneStaleSystemdFiles(quadctl *quadlet.State, targetDir, installName, searchDir string) ([]command.Command, error) {
+	commands := []command.Command{}
 
 	if !quadctl.Config.UseSubdirectories {
 		return commands, nil
@@ -272,7 +273,7 @@ func pruneStaleSystemdFiles(quadctl *quadlet.State, targetDir, installName, sear
 		// deleting it so podman cleans up the resources it created.
 		if !e.IsDir() && quadlet.IsQuadletExtension(filepath.Ext(name)) {
 			if stale, err := quadlet.ParseQuadletFile(stalePath); err == nil {
-				stop, err := HandleSystemdStop(quadctl, []*quadlet.Quadlet{stale}, true)
+				stop, err := HandleStop(quadctl, []*quadlet.Quadlet{stale}, true)
 				if err != nil {
 					return nil, err
 				}
@@ -281,8 +282,8 @@ func pruneStaleSystemdFiles(quadctl *quadlet.State, targetDir, installName, sear
 		}
 
 		isDir := e.IsDir()
-		cmd := NewCommand(fmt.Sprintf("Removing %s (no longer present in %s)", name, searchDir))
-		cmd.RunFn = func(c *Command) {
+		cmd := command.NewCommand(fmt.Sprintf("Removing %s (no longer present in %s)", name, searchDir))
+		cmd.RunFn = func(c *command.Command) {
 			if isDir {
 				c.Error = os.RemoveAll(stalePath)
 			} else {
@@ -375,14 +376,14 @@ func readFileLine(path string, n int) (string, error) {
 // it could not convert into a systemd unit. Without this, a bad quadlet option or reference
 // fails silently during daemon-reload, and the first sign of trouble is a confusing "unit not
 // found" (or similar) from the systemctl start that follows.
-func validateQuadletGenerationCommand(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, targetDir string) Command {
-	c := NewCommand("Validating quadlet definitions")
+func validateQuadletGenerationCommand(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, targetDir string) command.Command {
+	c := command.NewCommand("Validating quadlet definitions")
 	// This is a quick, silent-on-success check; skip the spinner so a failure (which exits
 	// the process directly, matching how other fatal errors in this function are handled)
 	// doesn't leave it dangling mid-animation.
-	c.PreFn = func(c *Command) {}
-	c.PostFn = func(c *Command) {}
-	c.RunFn = func(c *Command) {
+	c.PreFn = func(c *command.Command) {}
+	c.PostFn = func(c *command.Command) {}
+	c.RunFn = func(c *command.Command) {
 		generator := findQuadletGenerator()
 		if generator == "" {
 			return // Can't validate on this system; fall through to the normal reload/start flow.
@@ -437,7 +438,7 @@ func validateQuadletGenerationCommand(quadctl *quadlet.State, quadlets []*quadle
 	return c
 }
 
-func HandleSystemdRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
+func HandleRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
 	var targetDir string
 	if quadctl.IsRootful {
 		targetDir = quadctl.Config.QuadletRootPath
@@ -445,10 +446,10 @@ func HandleSystemdRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 		targetDir = quadctl.Config.QuadletUserPath
 	}
 
-	commands := []Command{}
+	commands := []command.Command{}
 
 	// Ensure any running services are stopped before uninstalling
-	cmds, err := HandleSystemdStop(quadctl, quadlets, true)
+	cmds, err := HandleStop(quadctl, quadlets, true)
 	if err != nil {
 		return nil, err
 	}
@@ -458,10 +459,10 @@ func HandleSystemdRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 	// For file operations, we use golang functions rather than podman, systemd or bash commands ...
 	// Encapsulate code to run in a slice of functions that will be executed in a custom command when the command is run.
 	funcs := []func(){}
-	c := NewCommand(fmt.Sprintf("Removing quadlets from %s", targetDir))
+	c := command.NewCommand(fmt.Sprintf("Removing quadlets from %s", targetDir))
 	if quadctl.IsVerbose {
-		c.PreFn = func(c *Command) {}
-		c.PostFn = func(c *Command) {}
+		c.PreFn = func(c *command.Command) {}
+		c.PostFn = func(c *command.Command) {}
 	}
 
 	//If targetDir exists, remove files.
@@ -546,7 +547,7 @@ func HandleSystemdRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 	}
 
 	// Custom run function that will, when executed by runCommands(), execute the anonymous functions created above.
-	c.RunFn = func(c *Command) {
+	c.RunFn = func(c *command.Command) {
 		for _, f := range funcs {
 			f()
 		}
@@ -561,7 +562,7 @@ func HandleSystemdRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 	commands = append(commands, c)
 
 	// Reload systemd to ensure it picks up the changes after removal.
-	cmds, err = HandleSystemdReload(quadctl)
+	cmds, err = HandleReload(quadctl)
 	if err != nil {
 		return nil, err
 	}

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/fkmiec/quadctl/internal/command"
 	"github.com/fkmiec/quadctl/internal/config"
-	"github.com/fkmiec/quadctl/internal/core"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/schema"
@@ -125,7 +125,7 @@ func run() int {
 		return 0
 	}
 
-	return core.RunCommands(quadctl, commands)
+	return command.RunCommands(quadctl, commands)
 }
 
 // handleInterrupts tears down cleanly on Ctrl-C. It lives in main because it has to exit, and
@@ -136,7 +136,7 @@ func handleInterrupts(quadctl *quadlet.State) {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		sig := <-ch
-		core.StopSpinner()
+		command.StopSpinner()
 		fmt.Fprintf(os.Stderr, "\nInterrupted (%s).\n", sig)
 		quadctl.Cleanup()
 		// 128 + SIGINT, the shell convention for "killed by a signal".

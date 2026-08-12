@@ -1,4 +1,4 @@
-package core
+package command
 
 import (
 	"fmt"
@@ -48,7 +48,7 @@ func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 			})
 		}
 	}
-	t.SetStyle(tableStyle(quadctl))
+	t.SetStyle(TableStyle(quadctl))
 	t.Render()
 
 	return nil
@@ -192,7 +192,7 @@ func HandleImages(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 			})
 		}
 	}
-	t.SetStyle(tableStyle(quadctl))
+	t.SetStyle(TableStyle(quadctl))
 	t.Render()
 
 	return nil

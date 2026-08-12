@@ -1,4 +1,4 @@
-package core
+package command
 
 import (
 	"fmt"
@@ -35,9 +35,9 @@ func UseColor(quadctl *quadlet.State) bool {
 	return isTerminal(os.Stdout)
 }
 
-// tableStyle picks the table rendering to match. The plain style is still a table, just
+// TableStyle picks the table rendering to match. The plain style is still a table, just
 // without the escape codes that a pipe has no use for.
-func tableStyle(quadctl *quadlet.State) table.Style {
+func TableStyle(quadctl *quadlet.State) table.Style {
 	if UseColor(quadctl) {
 		return table.StyleColoredYellowWhiteOnBlack
 	}
@@ -51,11 +51,11 @@ func useSpinner(quadctl *quadlet.State) bool {
 	return !quadctl.IsPrintOnly && isTerminal(os.Stdout)
 }
 
-// label renders the one-line description shown beside a command. Output used to mix
+// Label renders the one-line description shown beside a command. Output used to mix
 // "Systemd stopping .container app" with "Starting .container app", printing the raw file
 // extension as though it were a word; every command now reads the same way, with the type as
 // a noun (TODO.md section 4).
-func label(verb, kind, name string) string {
+func Label(verb, kind, name string) string {
 	kind = strings.TrimPrefix(kind, ".")
 	if kind == "" || name == "" {
 		return strings.TrimSpace(verb + " " + kind + " " + name)
@@ -63,13 +63,7 @@ func label(verb, kind, name string) string {
 	return fmt.Sprintf("%s %s %s", verb, kind, name)
 }
 
-// quadletLabel is label for the podman resource a quadlet describes.
+// quadletLabel is Label for the podman resource a quadlet describes.
 func quadletLabel(verb string, q *quadlet.Quadlet) string {
-	return label(verb, q.Type, q.DisplayName())
-}
-
-// unitLabel is label for the systemd unit a quadlet generates. It names the unit rather than
-// the podman resource, because that is what the systemctl command being run acts on.
-func unitLabel(verb string, q *quadlet.Quadlet) string {
-	return label(verb, q.Type, q.ServiceName)
+	return Label(verb, q.Type, q.DisplayName())
 }

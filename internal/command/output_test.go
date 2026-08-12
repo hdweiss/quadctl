@@ -1,4 +1,4 @@
-package core
+package command
 
 import (
 	"os"
@@ -16,11 +16,6 @@ func TestLabelDropsTheExtension(t *testing.T) {
 
 	if got, want := quadletLabel("Starting", q), "Starting container web-app"; got != want {
 		t.Errorf("quadletLabel = %q, want %q", got, want)
-	}
-	// The systemd variant names the unit systemctl is about to act on, not the podman
-	// resource, but reads the same way.
-	if got, want := unitLabel("Stopping", q), "Stopping container app"; got != want {
-		t.Errorf("unitLabel = %q, want %q", got, want)
 	}
 	// A .kube has no resource name of its own; the file's base name stands in.
 	kube := &quadlet.Quadlet{ID: "site", Type: ".kube"}

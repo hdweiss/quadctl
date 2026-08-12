@@ -1,4 +1,4 @@
-package core
+package systemd
 
 import (
 	"os"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/fkmiec/quadctl/internal/command"
 	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
@@ -67,7 +68,7 @@ func TestPruneStaleSystemdFiles(t *testing.T) {
 	}
 
 	// Running them must leave everything outside the installed subdirectory alone.
-	RunCommands(pruneTestQuadctl(), commands)
+	command.RunCommands(pruneTestQuadctl(), commands)
 	if _, err := os.Stat(unrelated); err != nil {
 		t.Errorf("unrelated installed quadlet was removed: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestPruneStaleSystemdFilesSkippedWithoutSubdirectories(t *testing.T) {
 	}
 }
 
-func labelsOf(commands []Command) []string {
+func labelsOf(commands []command.Command) []string {
 	out := make([]string, 0, len(commands))
 	for _, c := range commands {
 		out = append(out, c.Label)
@@ -119,7 +120,7 @@ func labelsOf(commands []Command) []string {
 	return out
 }
 
-func commandLines(commands []Command) []string {
+func commandLines(commands []command.Command) []string {
 	out := make([]string, 0, len(commands))
 	for _, c := range commands {
 		out = append(out, strings.Join(c.Cmd, " "))
@@ -156,7 +157,7 @@ func writeFile(t *testing.T, path, content string) {
 // in PLAN.md 3.2 could quietly have broken. A .quadlets bundle is extracted somewhere
 // private, but the directory it installs into is still named after the user's own directory:
 // name it after the scratch directory and every run installs a new randomly named copy that
-// HandleSystemdRemove and the stale-file prune can never find again.
+// HandleRemove and the stale-file prune can never find again.
 func TestSystemdInstallNameComesFromTheSourceDirectory(t *testing.T) {
 	targetDir := t.TempDir()
 	srcDir := filepath.Join(t.TempDir(), "webstack")
@@ -169,9 +170,9 @@ func TestSystemdInstallNameComesFromTheSourceDirectory(t *testing.T) {
 	quadctl.DotQuadletsPath = scratch
 	quadctl.Config.QuadletRootPath = targetDir
 
-	commands, err := HandleSystemdCreate(quadctl, nil)
+	commands, err := HandleCreate(quadctl, nil)
 	if err != nil {
-		t.Fatalf("HandleSystemdCreate: %v", err)
+		t.Fatalf("HandleCreate: %v", err)
 	}
 
 	var installed []string

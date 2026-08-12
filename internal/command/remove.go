@@ -1,4 +1,4 @@
-package core
+package command
 
 import (
 	"github.com/fkmiec/quadctl/internal/quadlet"

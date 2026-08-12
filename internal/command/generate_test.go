@@ -1,4 +1,4 @@
-package core
+package command
 
 import (
 	"flag"
@@ -258,4 +258,12 @@ func TestPodmanArgsSplitOnce(t *testing.T) {
 	if !slices.Equal(create, want) {
 		t.Errorf("create argv =\n  %#v\nwant\n  %#v", create, want)
 	}
+}
+
+func commandLines(commands []Command) []string {
+	out := make([]string, 0, len(commands))
+	for _, c := range commands {
+		out = append(out, strings.Join(c.Cmd, " "))
+	}
+	return out
 }

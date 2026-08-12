@@ -1,4 +1,4 @@
-package core
+package systemd
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/command"
 	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
@@ -13,16 +14,16 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandleSystemdStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
+func HandleStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
 
-	commands := []Command{}
+	commands := []command.Command{}
 
 	// Always (re)install the quadlet definitions, whether or not they're already
 	// installed, so that edits to the source files are picked up on every start.
 	// CopyFile/CopyDir overwrite existing files in place, so this is a no-op cost
-	// wise when nothing has changed. HandleSystemdCreate also reloads systemd
+	// wise when nothing has changed. HandleCreate also reloads systemd
 	// after copying so the generator picks up any changes.
-	cmd, err := HandleSystemdCreate(quadctl, quadlets)
+	cmd, err := HandleCreate(quadctl, quadlets)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +31,7 @@ func HandleSystemdStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
 	if info, err := podman.ContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
-		cmd, err := HandleSystemdStop(quadctl, quadlets, false)
+		cmd, err := HandleStop(quadctl, quadlets, false)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +51,7 @@ func HandleSystemdStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]
 		if (q.Type == ".container" && q.ParentPod == "") || q.Type == ".pod" || q.Type == ".kube" {
 			args := quadlet.ParseFields(buf.String())
 			args = append(args, q.ServiceName)
-			cmd := NewCommand(unitLabel("Starting", q))
+			cmd := command.NewCommand(unitLabel("Starting", q))
 			cmd.Cmd = args
 			commands = append(commands, cmd)
 		}
@@ -60,9 +61,9 @@ func HandleSystemdStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]
 	return commands, nil
 }
 
-func HandleSystemdStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, stopNetAndVol bool) ([]Command, error) {
+func HandleStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, stopNetAndVol bool) ([]command.Command, error) {
 
-	commands := []Command{}
+	commands := []command.Command{}
 
 	// Stop the systemd services
 	var buf bytes.Buffer
@@ -88,17 +89,17 @@ func HandleSystemdStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, stop
 		if len(args) == 0 {
 			continue
 		}
-		cmd := NewCommand(unitLabel("Stopping", q))
+		cmd := command.NewCommand(unitLabel("Stopping", q))
 		cmd.Cmd = args
 		commands = append(commands, cmd)
 	}
 	return commands, nil
 }
 
-func HandleSystemdStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
+func HandleStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
 
 	if quadctl.IsLongStatus {
-		commands := []Command{}
+		commands := []command.Command{}
 
 		var buf bytes.Buffer
 		data := systemdTemplateData(quadctl)
@@ -110,7 +111,7 @@ func HandleSystemdStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 			args = append(args, q.ServiceName)
 		}
 		if quadctl.IsPrintOnly {
-			c := NewCommand("Getting systemd status")
+			c := command.NewCommand("Getting systemd status")
 			c.Cmd = args
 			commands = append(commands, c)
 		} else {
@@ -121,13 +122,13 @@ func HandleSystemdStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([
 		if err := displayListOfSystemdInstalledQuadlets(quadctl, quadlets); err != nil {
 			return nil, err
 		}
-		return []Command{}, nil
+		return []command.Command{}, nil
 	}
 }
 
-func HandleSystemdLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
+func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
 
-	commands := []Command{}
+	commands := []command.Command{}
 
 	// Only .container and .kube quadlets run a process whose logs are worth tailing.
 	var serviceQuadlets []*quadlet.Quadlet
@@ -163,7 +164,7 @@ func HandleSystemdLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]C
 		cmd = append(cmd, "-u", serviceName)
 	}
 	if quadctl.IsPrintOnly {
-		c := NewCommand("Opening systemd logs")
+		c := command.NewCommand("Opening systemd logs")
 		c.Cmd = cmd
 		commands = append(commands, c)
 	} else {
@@ -172,16 +173,23 @@ func HandleSystemdLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]C
 	return commands, nil
 }
 
-func HandleSystemdReload(quadctl *quadlet.State) ([]Command, error) {
+func HandleReload(quadctl *quadlet.State) ([]command.Command, error) {
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
 	if err := quadctl.Config.SystemdReloadTmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("executing systemd reload template: %w", err)
 	}
-	command := quadlet.ParseFields(buf.String())
-	cmd := NewCommand("Reloading systemd")
-	cmd.Cmd = command
-	return []Command{cmd}, nil
+	argv := quadlet.ParseFields(buf.String())
+	cmd := command.NewCommand("Reloading systemd")
+	cmd.Cmd = argv
+	return []command.Command{cmd}, nil
+}
+
+// unitLabel is command.Label for the systemd unit a quadlet generates. It names the unit
+// rather than the podman resource, because that is what the systemctl command being run acts
+// on, but it reads the same way as every other command's label.
+func unitLabel(verb string, q *quadlet.Quadlet) string {
+	return command.Label(verb, q.Type, q.ServiceName)
 }
 
 // systemdTemplateData builds the data passed to the configurable systemd command templates.
@@ -213,7 +221,7 @@ func displayListOfSystemdInstalledQuadlets(quadctl *quadlet.State, quadlets []*q
 			})
 		}
 	}
-	t.SetStyle(tableStyle(quadctl))
+	t.SetStyle(command.TableStyle(quadctl))
 	t.Render()
 	return nil
 }

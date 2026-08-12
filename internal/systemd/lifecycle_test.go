@@ -1,4 +1,4 @@
-package core
+package systemd
 
 import (
 	"bytes"
@@ -37,5 +37,15 @@ func TestSystemdTemplateDataAlwaysSetsUser(t *testing.T) {
 		if strings.Contains(buf.String(), "<no value>") {
 			t.Errorf("rootful=%v: rendered the literal <no value>", tt.rootful)
 		}
+	}
+}
+
+// TestUnitLabelNamesTheUnit covers the systemd half of TODO.md section 4's label cleanup:
+// the label names the unit systemctl is about to act on rather than the podman resource, but
+// reads the same way as every other command's.
+func TestUnitLabelNamesTheUnit(t *testing.T) {
+	q := &quadlet.Quadlet{ID: "app", Type: ".container", ResourceName: "web-app", ServiceName: "app"}
+	if got, want := unitLabel("Stopping", q), "Stopping container app"; got != want {
+		t.Errorf("unitLabel = %q, want %q", got, want)
 	}
 }

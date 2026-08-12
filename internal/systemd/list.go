@@ -1,4 +1,4 @@
-package core
+package systemd
 
 import (
 	"path/filepath"
@@ -43,7 +43,7 @@ func listSystemdInstalledQuadlets(quadctl *quadlet.State, quadlets []*quadlet.Qu
 //
 // Only quadlets whose unit is actually loaded by systemd are included, matching
 // the contract of the primary `podman quadlet list` based implementation above:
-// callers (e.g. HandleSystemdStart) rely on a quadlet's absence from this list to
+// callers (e.g. HandleStart) rely on a quadlet's absence from this list to
 // detect that it still needs to be installed. `systemctl is-active` alone can't be
 // used for that check since it reports "inactive" both for a stopped-but-installed
 // unit and for a unit that was never installed at all.

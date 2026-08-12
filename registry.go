@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fkmiec/quadctl/internal/core"
+	"github.com/fkmiec/quadctl/internal/command"
 	"github.com/fkmiec/quadctl/internal/quadlet"
+	"github.com/fkmiec/quadctl/internal/systemd"
 )
 
 // This file is the single declaration of quadctl's command line. A subcommand is one entry
@@ -141,7 +142,7 @@ var globalFlags = []flagSpec{flagSystemd, flagNoSystemd, flagNoColor}
 
 // handlerFn is the shape every subcommand dispatches through. Handlers that print rather
 // than generate commands (ps, stats, images, list) return no commands.
-type handlerFn func(*quadlet.State, []*quadlet.Quadlet) ([]core.Command, error)
+type handlerFn func(*quadlet.State, []*quadlet.Quadlet) ([]command.Command, error)
 
 type subcommand struct {
 	Name     string
@@ -184,7 +185,7 @@ func commands() []*subcommand {
 			Summary:         "Pull required images",
 			Synopsis:        "Pull images defined in quadlet files.",
 			Flags:           []flagSpec{flagFile, flagPrint, flagAll},
-			Run:             core.HandlePull,
+			Run:             command.HandlePull,
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
 			Notes: []string{
@@ -197,8 +198,8 @@ func commands() []*subcommand {
 			Summary:       "Create resources (do not start). Use -s to generate quadlets under systemd.",
 			Synopsis:      "Create resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPrint, flagVerbose},
-			Run:           core.HandleCreate,
-			RunSystemd:    core.HandleSystemdCreate,
+			Run:           command.HandleCreate,
+			RunSystemd:    systemd.HandleCreate,
 			NeedsQuadlets: true,
 			Notes: []string{
 				"Use sudo for rootful quadlets.",
@@ -211,8 +212,8 @@ func commands() []*subcommand {
 			Summary:       "Create (if missing) and start resources. Use -s to start under systemd.",
 			Synopsis:      "Start resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPrint, flagVerbose},
-			Run:           core.HandleStart,
-			RunSystemd:    core.HandleSystemdStart,
+			Run:           command.HandleStart,
+			RunSystemd:    systemd.HandleStart,
 			NeedsQuadlets: true,
 			Notes: []string{
 				"Use sudo for rootful quadlets.",
@@ -225,7 +226,7 @@ func commands() []*subcommand {
 			Summary:       "Run a single .container in the foreground. Not supported under systemd.",
 			Synopsis:      "Run resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPodmanArgs, flagExec, flagPrint, flagVerbose},
-			Run:           core.HandleRun,
+			Run:           command.HandleRun,
 			RunSystemd:    refuseSystemd("systemd manages service lifecycles independently. Use 'start' to start the services and ensure your quadlets are configured to run the desired commands on startup"),
 			NeedsQuadlets: true,
 			Notes: []string{
@@ -243,9 +244,9 @@ func commands() []*subcommand {
 			Summary:     "Stop running services (do not remove). Use -s to stop under systemd.",
 			Synopsis:    "Stop resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:       []flagSpec{flagFile, flagPrint, flagVerbose},
-			Run:         core.HandleStop,
-			RunSystemd: func(q *quadlet.State, qs []*quadlet.Quadlet) ([]core.Command, error) {
-				return core.HandleSystemdStop(q, qs, false)
+			Run:         command.HandleStop,
+			RunSystemd: func(q *quadlet.State, qs []*quadlet.Quadlet) ([]command.Command, error) {
+				return systemd.HandleStop(q, qs, false)
 			},
 			NeedsQuadlets: true,
 			Notes: []string{
@@ -260,8 +261,8 @@ func commands() []*subcommand {
 			Summary:       "Remove stopped resources. Use -s to remove generated quadlets under systemd.",
 			Synopsis:      "Remove resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPrint, flagVerbose},
-			Run:           core.HandleRemove,
-			RunSystemd:    core.HandleSystemdRemove,
+			Run:           command.HandleRemove,
+			RunSystemd:    systemd.HandleRemove,
 			NeedsQuadlets: true,
 			Notes: []string{
 				"Will stop running resources if needed and remove networks and volumes.",
@@ -274,8 +275,8 @@ func commands() []*subcommand {
 			Summary:         "Show logs of running containers. Use -s to view systemd logs.",
 			Synopsis:        "Display logs.",
 			Flags:           []flagSpec{flagPrint},
-			Run:             core.HandleLogs,
-			RunSystemd:      core.HandleSystemdLogs,
+			Run:             command.HandleLogs,
+			RunSystemd:      systemd.HandleLogs,
 			WidensWhenEmpty: true,
 			Notes: []string{
 				"Helper command to open relevant logs (particularly under systemd with -s).",
@@ -289,8 +290,8 @@ func commands() []*subcommand {
 			Synopsis: "Display a tree view of quadlet directories and files.",
 			Flags:    []flagSpec{flagDepth, flagListAll},
 			// HandleList reads IsSystemd itself to pick which configured path to walk.
-			Run: func(quadctl *quadlet.State, _ []*quadlet.Quadlet) ([]core.Command, error) {
-				return nil, core.HandleList(quadctl)
+			Run: func(quadctl *quadlet.State, _ []*quadlet.Quadlet) ([]command.Command, error) {
+				return nil, command.HandleList(quadctl)
 			},
 			Notes: []string{
 				"'quadctl list' will display quadlets under your configured quadlet.src.path.",
@@ -306,8 +307,8 @@ func commands() []*subcommand {
 			Summary:  "Show images defined for the set of related quadlets.",
 			Synopsis: "List images defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]core.Command, error) {
-				return nil, core.HandleImages(quadctl, quadlets)
+			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
+				return nil, command.HandleImages(quadctl, quadlets)
 			},
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
@@ -323,8 +324,8 @@ func commands() []*subcommand {
 			Summary:  "Show state of containers.",
 			Synopsis: "Display state of containers defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]core.Command, error) {
-				return nil, core.HandlePS(quadctl, quadlets)
+			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
+				return nil, command.HandlePS(quadctl, quadlets)
 			},
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
@@ -341,8 +342,8 @@ func commands() []*subcommand {
 			Summary:  "Show live stats for containers.",
 			Synopsis: "Display live stats of running containers defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]core.Command, error) {
-				return nil, core.HandleStats(quadctl, quadlets)
+			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
+				return nil, command.HandleStats(quadctl, quadlets)
 			},
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
@@ -359,10 +360,10 @@ func commands() []*subcommand {
 			Synopsis: "Display status for resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:    []flagSpec{flagLong, flagFile, flagPrint, flagAll},
 			// Without -s, status is ps.
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]core.Command, error) {
-				return nil, core.HandlePS(quadctl, quadlets)
+			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
+				return nil, command.HandlePS(quadctl, quadlets)
 			},
-			RunSystemd:      core.HandleSystemdStatus,
+			RunSystemd:      systemd.HandleStatus,
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
 			Notes: []string{
@@ -379,7 +380,7 @@ func commands() []*subcommand {
 // systemd. Refusing is a failure, so it travels back as an error and exits non-zero rather
 // than printing an explanation and claiming success.
 func refuseSystemd(why string) handlerFn {
-	return func(quadctl *quadlet.State, _ []*quadlet.Quadlet) ([]core.Command, error) {
+	return func(quadctl *quadlet.State, _ []*quadlet.Quadlet) ([]command.Command, error) {
 		return nil, fmt.Errorf("'%s' is not supported with systemd (-s): %s", quadctl.Subcommand, why)
 	}
 }
@@ -474,7 +475,7 @@ func (r *registry) processSubcommand(quadctl *quadlet.State) (*subcommand, error
 
 // dispatch runs the subcommand, picking the systemd implementation when one exists and -s
 // was given.
-func (c *subcommand) dispatch(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]core.Command, error) {
+func (c *subcommand) dispatch(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
 	if quadctl.IsSystemd && c.RunSystemd != nil {
 		return c.RunSystemd(quadctl, quadlets)
 	}
