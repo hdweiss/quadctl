@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // handleCreate generates and executes 'podman create' commands for all resources, but first checks if they exist and prints warnings if they do,

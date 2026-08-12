@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // Call handleCreate. Then start.

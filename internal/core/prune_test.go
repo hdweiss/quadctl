@@ -7,7 +7,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 func pruneTestQuadctl() *util.Quadctl {

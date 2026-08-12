@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/fkmiec/quadctl/schema"
+	"github.com/fkmiec/quadctl/internal/schema"
 )
 
 func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {

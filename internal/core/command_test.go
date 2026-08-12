@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // newTestQuadctl returns a run state wired to a RecordingRunner, so nothing in a test

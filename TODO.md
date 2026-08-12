@@ -394,30 +394,49 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `:285`. *Done in `PLAN.md` 2.3* — also the stale `.quadlets` design note at
   `util/parser.go:181-193`, which describes work that has since shipped.
 
+- [x] **Nothing is under `internal/`.** `core`, `util` and `schema` are all importable as
+  `github.com/fkmiec/quadctl/…`. This is a CLI with no library consumers, and `internal/` is
+  the only layout convention the compiler enforces — everything below `main` belongs there,
+  which is also what stops any later signature change from being an API break.
+  `main.go`/`registry.go` stay at the root: that is the documented shape for a single
+  command, and one binary does not need `cmd/quadctl/`. *Done in `PLAN.md` 2.5.*
+
+- [ ] **`util` is a grab-bag, and the name is the documented anti-pattern.**
+  [go.dev/blog/package-names](https://go.dev/blog/package-names) calls out `util`/`common`/
+  `misc` by name: no context for the client, unfocused dependencies, collides with every
+  other project's `util`. Here it holds five unrelated things — the domain model and INI
+  parser (`parser.go`, 738 lines), config discovery and file I/O (`files.go`), the
+  podman option mapping (`options.go`), a bubbletea selector (`tui.go`) and the `Runner`
+  seam (`runner.go`) — plus what's left of `flags.go` (68 lines, just `ResolveSearchDir`).
+  Split per `PLAN.md` 6.1. `core` has the same problem with cohesive contents
+  (`internal/command` is the honest name); `schema` is fine as-is.
+
+- [ ] **No package doc comments anywhere.** Not on `core`, `util` or `schema`, and no
+  `doc.go`. Every package should have one, in exactly one file. *`PLAN.md` 6.2 — after 6.1,
+  so the boundaries being documented are the final ones.*
+
 ## 6. Tests, CI, repo hygiene
 
 - [x] **`go vet ./...` currently fails** — `schema/validator.go:181-182`, duplicate
   `json:"ignore-empty"` tags. CI (`.github/workflows/go.yml`) doesn't run vet, so it went
   unnoticed. Add `go vet` to CI. *Fixed by `PLAN.md` 2.3:* the file is gone and CI vets.
 
-- [ ] **Test coverage is one file** (`util/options_test.go`) covering schema→podman option
-  templating only. Nothing covers the parser, dependency resolution, topological sort,
-  path resolution, or command generation — which is where every bug in §1 lives.
-  Highest-value additions:
-  - `getSearchDir` table test (relative dir, absolute dir, file path, name under
-    `quadlet.src.path`, missing) — would have caught the `.` bug.
-  - `parseQuadlet`/`parseIniFile` fixtures: quoted values, spaces, continuations, drop-ins,
-    `ServiceName=` overrides, `.quadlets` extraction.
-  - `generateCreateCommand` golden-output tests (also forces deterministic ordering).
-  - `pruneStaleSystemdFiles` against a temp dir.
+- [x] **Test coverage was one file** (`util/options_test.go`) covering schema→podman option
+  templating only — nothing over the parser, dependency resolution, topological sort, path
+  resolution or command generation, which is where every bug in §1 lived. *Done in `PLAN.md`
+  1.4 and 2.x:* eight test files now, including `util/flags_test.go` (search-dir table
+  test), `util/parser_test.go` (fixtures under `util/testdata/`), `core/generate_test.go`
+  against the `core/testdata/commands.golden` golden file, `core/prune_test.go` against a
+  temp dir, and `registry_test.go`. Layout follows the Go convention: tests beside the code,
+  fixtures in `testdata/`, which the go tool ignores.
 
-- [ ] **`.gitignore` blocks test fixtures**: `*.container`, `*.pod`, `*.network`, `*.volume`
-  are ignored at every level, so example/fixture quadlets can't be committed —
-  which is probably why there are none. Narrow to the repo root, and note `.kube`/`.quadlets`
-  aren't ignored (inconsistent).
+- [x] **`.gitignore` blocked test fixtures**: `*.container`, `*.pod`, `*.network`,
+  `*.volume` were ignored at every level, so fixture quadlets couldn't be committed — which
+  is why there were none. *Fixed in `PLAN.md` 1.4:* the patterns are anchored to the repo
+  root (`/*.container`, …). Don't widen them back.
 
 - [ ] **`go.mod` isn't tidy** — `bubbletea`, `spinner` and `goccy/go-yaml` are imported
-  directly but marked `// indirect`.
+  directly but marked `// indirect`. `go mod tidy` moves 10 lines as of this writing.
 
 - [ ] **Release workflow doesn't run tests or vet** before publishing binaries
   (`.github/workflows/build_release.yml:25`). Phase 5. `build.sh` now builds the package
@@ -425,6 +444,26 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 - [ ] **CI only triggers on `main`** (`.github/workflows/go.yml:6-10`), so nothing runs on
   this branch.
+
+- [ ] **No linter beyond `go vet`.** `golangci-lint` is the de facto standard meta-linter;
+  `unused` alone would find the dead code §5 still tracks by hand. Pin it as a `go.mod`
+  `tool` dependency (`go get -tool`, Go 1.24+) rather than installing it ad hoc, so CI and
+  local runs use the same version. *`PLAN.md` 6.3 — independent of the refactor.*
+
+- [ ] **The release workflow hand-rolls what GoReleaser does.**
+  `.github/workflows/build_release.yml` runs three cross-compiles and three `tar`
+  invocations by hand and still carries the workflow template's `# Replace this with your
+  actual build command` comment. There are no checksums and no changelog. A
+  `.goreleaser.yaml` replaces the lot and does Phase 5's `-ldflags -X` version stamping on
+  the way. *`PLAN.md` 6.4.*
+
+- [ ] **CI details.** `go test` runs without `-race`; both workflows are on
+  `actions/setup-go@v4` (v5+ is current); and the Go version is pinned `'1.26.3'` in
+  `go.yml` but `'1.26'` in `build_release.yml`. *`PLAN.md` 6.5.*
+
+- [ ] **No task runner — and deliberately none yet.** `go build ./...`, `go test ./...` and
+  `go vet ./...` are the build system; a Makefile wrapping only those is noise. Revisit once
+  6.3–6.5 create real targets (lint, cover, cross-build, release dry-run). *`PLAN.md` 6.6.*
 
 ## 7. Documentation
 

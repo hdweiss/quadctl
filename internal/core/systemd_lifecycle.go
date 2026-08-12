@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 )

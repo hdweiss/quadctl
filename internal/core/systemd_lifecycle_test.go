@@ -6,7 +6,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // TestSystemdTemplateDataAlwaysSetsUser guards the text/template swap (Phase 0.7): a missing

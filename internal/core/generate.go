@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // generateCreateCommand creates the base 'podman ... create' string.

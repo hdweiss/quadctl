@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fkmiec/quadctl/core"
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/core"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // This file is the single declaration of quadctl's command line. A subcommand is one entry

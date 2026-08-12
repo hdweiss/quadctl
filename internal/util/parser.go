@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/fkmiec/quadctl/schema"
+	"github.com/fkmiec/quadctl/internal/schema"
 	yaml "github.com/goccy/go-yaml"
 )
 

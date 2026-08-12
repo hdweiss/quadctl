@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files with the current output")

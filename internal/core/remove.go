@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {

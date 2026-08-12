@@ -1,7 +1,7 @@
 package util
 
 import (
-	"github.com/fkmiec/quadctl/schema"
+	"github.com/fkmiec/quadctl/internal/schema"
 )
 
 func GetQuadletSchemas() map[string]map[string]schema.SchemaOption {

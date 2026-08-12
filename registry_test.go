@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 func testRegistry(t *testing.T) (*registry, *util.Quadctl) {

@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/fkmiec/quadctl/core"
-	"github.com/fkmiec/quadctl/schema"
-	"github.com/fkmiec/quadctl/util"
+	"github.com/fkmiec/quadctl/internal/core"
+	"github.com/fkmiec/quadctl/internal/schema"
+	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // defaultListDepth is the depth 'list' walks when -d is not given: enough to show the

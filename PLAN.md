@@ -4,6 +4,8 @@ Companion to `TODO.md` (the defect list) and `FEATURES.md` (the parking lot). Th
 order of operations: refactor, not rewrite, with two contained subsystem rewrites along
 the way.
 
+**Status:** Phases 0, 1, 2 and 2.5 are done. Next up is Phase 3.
+
 ## Principles
 
 1. **Critical bug fixes are not gated behind the refactor.** The §1 items in `TODO.md` are
@@ -21,7 +23,7 @@ Sizes below are relative: **S** = a sitting, **M** = a day-ish, **L** = multi-da
 
 ---
 
-## Phase 0 — Stop the bleeding
+## Phase 0 — Stop the bleeding — **done**
 
 Small, surgical fixes on the existing structure. No restructuring, no test infrastructure
 yet — each is hand-verifiable with `-p` print mode. Cut a release at the end.
@@ -46,7 +48,7 @@ real fix lands. **S.**
 
 ---
 
-## Phase 1 — Carve the seams
+## Phase 1 — Carve the seams — **done**
 
 The enabling work. Order matters: each unlocks the next.
 
@@ -83,7 +85,7 @@ Requires narrowing `.gitignore` first (it currently blocks `*.container`/`*.pod`
 
 ---
 
-## Phase 2 — Structural moves
+## Phase 2 — Structural moves — **done**
 
 Pure relocation, now safe.
 
@@ -130,7 +132,34 @@ delete the commented-out blocks listed in `TODO.md` §5, decide on `schema/valid
 either wire it into a `validate` command (`FEATURES.md`) or delete the ~256 dead lines. Fix
 the `go vet` failure (`schema/validator.go:181-182`) and add `go vet` to CI.
 
-**Done when:** adding a subcommand touches one table plus one file.
+**Done when:** adding a subcommand touches one table plus one file. — *Met: `registry.go`
+is the single table, `validator.go` is gone, `go vet ./...` is clean and runs in CI.*
+
+---
+
+## Phase 2.5 — `internal/` move — **done**
+
+*Added after Phase 2 shipped, from an audit against the official Go layout guidance
+([go.dev/doc/modules/layout](https://go.dev/doc/modules/layout)). It sits here, and not in
+Phase 6 with the rest of that audit, because it is a pure rename that gets more expensive
+with every commit that touches an import line.*
+
+**2.5 — Move `core/`, `util/` and `schema/` under `internal/` (S).** All three are currently
+importable as `github.com/fkmiec/quadctl/core` and friends. This is a CLI with no library
+consumers, and `internal/` is the only layout convention the compiler actually enforces —
+putting them there makes Phases 3, 4 and 6 free to change any exported signature without it
+being an API break.
+
+`main.go` and `registry.go` stay at the repo root; that is the documented shape for a single
+command, and there is no reason to invent a `cmd/quadctl/` for one binary. No `pkg/` — it
+appears nowhere in the official guidance.
+
+*Constraint:* rename plus import rewrite, nothing else. `git diff -M --stat` shows renames
+and import lines only.
+
+**Done when:** `go list ./...` shows every non-`main` package under `internal/`. — *Met:
+`internal/core`, `internal/schema`, `internal/util`; `main.go` and `registry.go` stayed at the
+root.*
 
 ---
 
@@ -187,23 +216,100 @@ one coherent change:
 - `--version` via `-ldflags -X`, tests + vet in the release workflow, CI triggering on all
   branches.
 
+*Overlap note:* the release half of this is largely subsumed by 6.4 — GoReleaser does the
+`-ldflags -X` stamping and the cross-compile matrix in one config. Do 6.4 and this becomes
+docs plus a `needs:` edge from the test job.
+
+---
+
+## Phase 6 — Go idiom and tooling alignment
+
+*Added 2026-08-12 from an audit against the official Go guidance:
+[layout](https://go.dev/doc/modules/layout), [package
+names](https://go.dev/blog/package-names), [Code Review
+Comments](https://go.dev/wiki/CodeReviewComments), [doc
+comments](https://go.dev/doc/comment). Phase 2.5 is the piece of that audit worth doing
+immediately; everything below either waits on Phase 3 or is independent of the refactor
+entirely.*
+
+**6.1 — Break up `util` (M). Requires 3.2.** `util` is the package name the Go blog names as
+an anti-pattern, and here it is literal: five unrelated responsibilities sharing a directory
+because there was nowhere else to put them. Target:
+
+```
+internal/quadlet   parser.go + flags.go   Quadlet, Option, INI parsing, search-dir resolution
+internal/config    files.go               config discovery, embedded quadctl.ini, file I/O
+internal/podman    options.go             quadlet option -> podman flag mapping
+internal/tui       tui.go                 the bubbletea selector
+internal/exec      runner.go              Runner/ExecRunner/RecordingRunner
+```
+
+`core` has the same vague-name problem with cohesive contents; `internal/command` is the
+honest name for "dispatch plus handlers", and splitting the 823 lines of `systemd_*.go` into
+`internal/systemd` is defensible but optional. `schema` keeps its name — it is a real noun
+for what it holds.
+
+*Why it waits:* `util.Quadctl` lives in `parser.go` and is config + flags + run state in one
+struct. 3.2 splits it into `Config` and `State`, which is what decides whether it lands in
+`internal/config` or stays with `main`. Doing 6.1 first means splitting that struct twice.
+
+**6.2 — Package doc comments (S).** Every package should have one, in exactly one file
+(`doc.go` when it runs long). There are currently none — not on `core`, `util`, or `schema`.
+Best done at the end of 6.1, when the package boundaries are the ones that will last.
+
+**6.3 — `golangci-lint`, pinned as a tool dependency (S). Independent.** `go vet` is the
+floor and it is now in CI; a meta-linter is the ceiling. `unused` alone would have found the
+dead code §5 still tracks by hand. Pin it with `go get -tool` rather than installing it ad
+hoc, so CI and local runs agree — Go 1.24 added the `go.mod` `tool` directive for exactly
+this and it retires the old `tools.go` blank-import trick. Config in `.golangci.yml`.
+
+**6.4 — GoReleaser (S). Independent.** `build_release.yml` hand-rolls three cross-compiles
+and three `tar` invocations, and still carries the workflow template's `# Replace this with
+your actual build command`. A `.goreleaser.yaml` replaces the whole block and adds checksums
+and a changelog, neither of which exist today. It also does Phase 5's `-ldflags -X` version
+stamping, so treat the two as one task. Pin it via the same `tool` directive as 6.3.
+
+**6.5 — CI details (S). Independent.**
+- `go test` runs without `-race`.
+- Both workflows use `actions/setup-go@v4`; v5+ is current.
+- `go.yml` pins `'1.26.3'`, `build_release.yml` pins `'1.26'`. Pick one.
+- `go mod tidy` is still pending (§6) — `tidy` moves 10 lines today.
+
+**6.6 — A task runner, once there is something to wrap (S). Last.** There is deliberately
+nothing here yet: `go build ./...`, `go test ./...` and `go vet ./...` are the build system,
+and a Makefile that only wraps them is noise. After 6.3–6.5 there are real targets (lint,
+cover, cross-build, release dry-run) and one earns its place. Make is the safe default;
+Task (`Taskfile.yml`) if cross-platform matters.
+
+**Not doing:** `pkg/`, and `cmd/quadctl/` for a single binary. Neither appears in the
+official layout guidance for a repo this shape.
+
+**Done when:** no package is named for its role in the build rather than its subject, and
+`golangci-lint` + tests + vet all gate a release that GoReleaser cuts.
+
 ---
 
 ## Sequencing summary
 
 ```
-Phase 0  bleeding      ──▶ release
-Phase 1  seams         ──▶ runner iface → errors → determinism → tests
-Phase 2  moves         ──▶ split files → registry → housekeeping
-Phase 3  rewrites      ──▶ value model → state split
+Phase 0  bleeding      ──▶ release                                        done
+Phase 1  seams         ──▶ runner iface → errors → determinism → tests    done
+Phase 2  moves         ──▶ split files → registry → housekeeping          done
+Phase 2.5 internal/    ──▶ pure rename                                    done
+Phase 3  rewrites      ──▶ value model → state split                      next
 Phase 4  consistency   ──▶ naming → matching → config → output → paths
 Phase 5  docs/release
+Phase 6  go idiom      ──▶ util split → package docs → lint → release → tasks
+                          (6.3–6.5 are independent; they can land any time)
 ```
 
 **Don't reorder these:** 1.1 before 1.4 (no tests without a fake runner), 1.3 before golden
 tests, 1.2 before 2.2 (a registry of functions that call `os.Exit` isn't a registry),
 2.1 before 2.2 (move first, then rewire), 3.1 after 1.4 (the value model rewrite is the
-change most likely to break something quietly).
+change most likely to break something quietly), 2.5 before 3 (the rename is cheapest when
+the fewest commits are in flight), 3.2 before 6.1 (otherwise the state struct gets split
+twice), 6.1 before 6.2 (documenting package boundaries that are about to move is wasted
+work), 6.4 before 5's release bullet (GoReleaser subsumes it).
 
 **One thing to resist:** doing Phase 4's naming work early because it's the most
 *interesting* problem. It touches both execution paths and has no test coverage until
