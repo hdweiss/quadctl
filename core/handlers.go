@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1345,7 +1346,8 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 		cmd = append(cmd, "podman", "volume", "create")
 		if volSec, ok := q.Sections["Volume"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(volSec)...)
-			for k, vals := range volSec {
+			for _, k := range slices.Sorted(maps.Keys(volSec)) {
+				vals := volSec[k]
 				for _, v := range vals {
 					switch k {
 					case "Type":
@@ -1382,7 +1384,8 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 		cmd = append(cmd, "podman", "network", "create")
 		if netSec, ok := q.Sections["Network"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(netSec)...)
-			for k, vals := range netSec {
+			for _, k := range slices.Sorted(maps.Keys(netSec)) {
+				vals := netSec[k]
 				for _, v := range vals {
 					switch k {
 					case "NetworkName":
@@ -1421,7 +1424,8 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 		cmd = append(cmd, "podman", "pod", "create", "--name", podName)
 		if podSec, ok := q.Sections["Pod"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(podSec)...)
-			for k, vals := range podSec {
+			for _, k := range slices.Sorted(maps.Keys(podSec)) {
+				vals := podSec[k]
 				for _, v := range vals {
 					switch k {
 					case "ServiceName":
@@ -1478,7 +1482,8 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 			}
 
 			cmd = append(cmd, configuredPodmanArgs...)
-			for k, vals := range contSec {
+			for _, k := range slices.Sorted(maps.Keys(contSec)) {
+				vals := contSec[k]
 				opt, ok := options[k]
 				if !ok {
 					warnings = append(warnings, fmt.Sprintf("Quadlet container option not defined: %s", k))
@@ -1573,7 +1578,8 @@ func generateStartupCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, [
 		cmd = append(cmd, "podman", "play", "kube")
 		if kubeSec, ok := q.Sections["Kube"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(kubeSec)...)
-			for k, vals := range kubeSec {
+			for _, k := range slices.Sorted(maps.Keys(kubeSec)) {
+				vals := kubeSec[k]
 				for _, v := range vals {
 					switch k {
 					case "Yaml":

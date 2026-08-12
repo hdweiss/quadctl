@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -609,11 +611,9 @@ func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 		}
 	}
 
-	deps := []string{}
-	for k := range depSet {
-		deps = append(deps, k)
-	}
-	q.Deps = deps
+	// Sorted: Deps drives the topological sort, and an unstable order there reorders the
+	// commands quadctl emits from one run to the next.
+	q.Deps = slices.Sorted(maps.Keys(depSet))
 }
 
 func topologicalSort(quadlets map[string]*Quadlet) ([]*Quadlet, error) {
@@ -645,7 +645,9 @@ func topologicalSort(quadlets map[string]*Quadlet) ([]*Quadlet, error) {
 		return nil
 	}
 
-	for id := range quadlets {
+	// Sorted seed order, so quadlets with no dependency relationship between them keep a
+	// stable relative order instead of shuffling on every run.
+	for _, id := range slices.Sorted(maps.Keys(quadlets)) {
 		if !visited[id] {
 			if err := visit(id); err != nil {
 				return nil, err
