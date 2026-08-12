@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	. "github.com/fkmiec/quadctl/schema"
+	"github.com/fkmiec/quadctl/schema"
 )
 
 func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
-	quadletSchemas := map[string]map[string]SchemaOption{}
+	quadletSchemas := map[string]map[string]schema.SchemaOption{}
 	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
 	quadletSchemas["network"] = GetQuadletOptionsMap("network")
 	quadletSchemas["container"] = GetQuadletOptionsMap("container")
@@ -17,7 +17,7 @@ func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	// Defining the columns of the table
 	var tests = []struct {
 		qType   string
-		options map[string]SchemaOption
+		options map[string]schema.SchemaOption
 		key     string
 		value   string
 		want    string
@@ -54,7 +54,7 @@ func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
 }
 
 func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
-	quadletSchemas := map[string]map[string]SchemaOption{}
+	quadletSchemas := map[string]map[string]schema.SchemaOption{}
 	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
 	quadletSchemas["network"] = GetQuadletOptionsMap("network")
 	quadletSchemas["container"] = GetQuadletOptionsMap("container")
@@ -63,7 +63,7 @@ func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	// Defining the columns of the table
 	var tests = []struct {
 		qType   string
-		options map[string]SchemaOption
+		options map[string]schema.SchemaOption
 		key     string
 		value   string
 		want    string
@@ -103,7 +103,7 @@ func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
 }
 
 func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
-	quadletSchemas := map[string]map[string]SchemaOption{}
+	quadletSchemas := map[string]map[string]schema.SchemaOption{}
 	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
 	quadletSchemas["network"] = GetQuadletOptionsMap("network")
 	quadletSchemas["container"] = GetQuadletOptionsMap("container")
@@ -112,7 +112,7 @@ func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	// Defining the columns of the table
 	var tests = []struct {
 		qType   string
-		options map[string]SchemaOption
+		options map[string]schema.SchemaOption
 		key     string
 		value   string
 		want    string
@@ -159,7 +159,7 @@ func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
 }
 
 func TestContainerQuadletOptionsToPodmanTableDriven(t *testing.T) {
-	quadletSchemas := map[string]map[string]SchemaOption{}
+	quadletSchemas := map[string]map[string]schema.SchemaOption{}
 	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
 	quadletSchemas["network"] = GetQuadletOptionsMap("network")
 	quadletSchemas["container"] = GetQuadletOptionsMap("container")
@@ -168,7 +168,7 @@ func TestContainerQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	// Defining the columns of the table
 	var tests = []struct {
 		qType   string
-		options map[string]SchemaOption
+		options map[string]schema.SchemaOption
 		key     string
 		value   string
 		want    string
@@ -300,7 +300,7 @@ func TestContainerQuadletOptionsToInspectTableDriven(t *testing.T) {
 	// Defining the columns of the table
 	var tests = []struct {
 		qType   string
-		options map[string]SchemaOption
+		options map[string]schema.SchemaOption
 		key     string
 		value   string
 		want    string

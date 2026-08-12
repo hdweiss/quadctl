@@ -12,14 +12,6 @@ import (
 )
 
 func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
-	//Ideally, call handleInstall if needed. How to check if the required systemd services are installed?
-	/*
-		❯ sudo podman quadlet list
-		NAME                   UNIT NAME                    PATH ON DISK                                           STATUS      APPLICATION
-		homebox-app.container  homebox-app.service          /etc/containers/systemd/homebox/homebox-app.container  Not loaded
-		homebox-data.volume    homebox-data-volume.service  /etc/containers/systemd/homebox/homebox-data.volume    Not loaded
-		homebox.pod            homebox-pod.service          /etc/containers/systemd/homebox/homebox.pod            Not loaded
-	*/
 
 	commands := []Command{}
 
@@ -202,23 +194,6 @@ func systemdTemplateData(quadctl *util.Quadctl) map[string]string {
 }
 
 func displayListOfSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
-	/*
-		//podman quadlet list --format "{{.Name}}|{{.UnitName}}|{{.Path}}|{{.Status}}\n"
-		cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}}|{{.UnitName}}|{{.Path}}|{{.Status}}"}
-		output, err := runCommandCapture(quadctl.Runner, cmd)
-		if err != nil {
-			return err
-		}
-		info := [][]string{}
-		lines := strings.Split(output, "\n")
-		for _, line := range lines {
-			parts := strings.Split(line, "|")
-			if len(parts) < 4 {
-				continue
-			}
-			info = append(info, parts)
-		}
-	*/
 	info, err := listSystemdInstalledQuadlets(quadctl, quadlets)
 	if err != nil {
 		return err

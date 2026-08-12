@@ -31,11 +31,13 @@ workflow relative to the effort.
 ## Better feedback
 
 - **`quadctl validate` / `lint`.** The schema already carries per-option validators and
-  known-value lists (`schema/validator.go`, `PopulateValidators`), and none of it is used.
-  A `validate` command that checks option names, value formats, and cross-references
-  (`Pod=`, `Network=`, `Volume=` pointing at files that exist) would catch most quadlet
-  mistakes before podman or the generator does. This would also give the dead code in
-  `schema/validator.go` a purpose.
+  known-value lists (`SchemaOption.Values[].Validator`, filled in by `PopulateValidators`),
+  and none of it is used. A `validate` command that checks option names, value formats, and
+  cross-references (`Pod=`, `Network=`, `Volume=` pointing at files that exist) would catch
+  most quadlet mistakes before podman or the generator does. Note that the abandoned
+  `schema/validator.go` was deleted in `PLAN.md` 2.3 — it was a parallel, never-called
+  `AttributeSchema`/`Handler` model that shared nothing with the live `SchemaOption` one, so
+  this feature would build on `SchemaOption`, not resurrect it.
 
 - **`--format json` (or `-o json`) for `ps`, `status`, `images`, `list`.** The tables are
   pretty but unparseable; JSON output would make quadctl scriptable.

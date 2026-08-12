@@ -1,12 +1,12 @@
 package util
 
 import (
-	. "github.com/fkmiec/quadctl/schema"
+	"github.com/fkmiec/quadctl/schema"
 )
 
-func GetQuadletSchemas() map[string]map[string]SchemaOption {
+func GetQuadletSchemas() map[string]map[string]schema.SchemaOption {
 	//Get the schemas for each supported type
-	schemas := map[string]map[string]SchemaOption{}
+	schemas := map[string]map[string]schema.SchemaOption{}
 	schemas["volume"] = GetQuadletOptionsMap("volume")
 	schemas["network"] = GetQuadletOptionsMap("network")
 	schemas["container"] = GetQuadletOptionsMap("container")
@@ -15,17 +15,17 @@ func GetQuadletSchemas() map[string]map[string]SchemaOption {
 	return schemas
 }
 
-func GetQuadletOptionsMap(quadletType string) map[string]SchemaOption {
-	var options []SchemaOption
+func GetQuadletOptionsMap(quadletType string) map[string]schema.SchemaOption {
+	var options []schema.SchemaOption
 	switch quadletType {
 	case "container":
-		options = GetContainerOptions()
+		options = schema.GetContainerOptions()
 	case "pod":
-		options = GetPodOptions()
+		options = schema.GetPodOptions()
 	case "network":
-		options = GetNetworkOptions()
+		options = schema.GetNetworkOptions()
 	case "volume":
-		options = GetVolumeOptions()
+		options = schema.GetVolumeOptions()
 	default:
 		return nil
 	}
@@ -36,17 +36,17 @@ func GetQuadletOptionsMap(quadletType string) map[string]SchemaOption {
 	return optionsMap
 }
 
-func GetPodmanOptionsMap(quadletType string) map[string]SchemaOption {
-	var options []SchemaOption
+func GetPodmanOptionsMap(quadletType string) map[string]schema.SchemaOption {
+	var options []schema.SchemaOption
 	switch quadletType {
 	case "container":
-		options = GetContainerOptions()
+		options = schema.GetContainerOptions()
 	case "pod":
-		options = GetPodOptions()
+		options = schema.GetPodOptions()
 	case "network":
-		options = GetNetworkOptions()
+		options = schema.GetNetworkOptions()
 	case "volume":
-		options = GetVolumeOptions()
+		options = schema.GetVolumeOptions()
 	default:
 		return nil
 	}
@@ -57,16 +57,16 @@ func GetPodmanOptionsMap(quadletType string) map[string]SchemaOption {
 	return optionsMap
 }
 
-func assembleQuadletOptionsMap(options []SchemaOption) map[string]SchemaOption {
-	optionsMap := make(map[string]SchemaOption)
+func assembleQuadletOptionsMap(options []schema.SchemaOption) map[string]schema.SchemaOption {
+	optionsMap := make(map[string]schema.SchemaOption)
 	for _, option := range options {
 		optionsMap[option.QuadletKey] = option
 	}
 	return optionsMap
 }
 
-func assemblePodmanOptionsMap(options []SchemaOption) map[string]SchemaOption {
-	optionsMap := make(map[string]SchemaOption)
+func assemblePodmanOptionsMap(options []schema.SchemaOption) map[string]schema.SchemaOption {
+	optionsMap := make(map[string]schema.SchemaOption)
 	for _, option := range options {
 		optionsMap[option.PodmanKey] = option
 	}

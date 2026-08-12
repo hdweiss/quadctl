@@ -178,19 +178,6 @@ func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Q
 		return nil, err
 	}
 
-	/*
-	   Proposed modification to support single file format (.quadlet):
-	   - Loop over searchDir and check for a .quadlets file extension (single file format for quadlets)
-	   - If found one or more .quadlets file(s)
-	   -   Create temp directory and extract .quadlets into separate files with their indicated filenames and extensions
-	   -   Set DotQuadletsPath
-	   - If DotQuadletsPath != "" (ie. there were .quadlets files):
-	   -   Loop over files again and look for .container, .pod, .volume, .network and if found, copy to the temp directory
-	   -   Also copy any drop in directories
-	   -   Set searchDir = DotQuadletsPath (aka tempDir) and read files again from new searchDir
-
-	   - Loop over files and look for .container, .pod, .volume, .network and if found, parse quadlets
-	*/
 	for _, f := range files {
 		//fmt.Println(f.Name(), f.IsDir())
 		path := filepath.Join(searchDir, f.Name())
@@ -679,50 +666,6 @@ func ParseFields(input string) []string {
 
 	return fields
 }
-
-/*
-func ParseDurationToSeconds(duration string) (int, error) {
-	var totalSeconds int
-	var currentNum strings.Builder
-
-	for _, r := range duration {
-		switch {
-		case r >= '0' && r <= '9':
-			currentNum.WriteRune(r)
-		case r == 's':
-
-			num, err := strconv.Atoi(currentNum.String())
-			if err != nil {
-				return 0, fmt.Errorf("invalid seconds value: %v", err)
-			}
-			totalSeconds += num
-			currentNum.Reset()
-		case r == 'm':
-			num, err := strconv.Atoi(currentNum.String())
-			if err != nil {
-				return 0, fmt.Errorf("invalid minutes value: %v", err)
-			}
-			totalSeconds += num * 60
-			currentNum.Reset()
-		case r == 'h':
-			num, err := strconv.Atoi(currentNum.String())
-			if err != nil {
-				return 0, fmt.Errorf("invalid hours value: %v", err)
-			}
-			totalSeconds += num * 3600
-			currentNum.Reset()
-		default:
-			return 0, fmt.Errorf("invalid character in duration: %c", r)
-		}
-	}
-
-	if currentNum.Len() > 0 {
-		return 0, fmt.Errorf("trailing number without unit: %s", currentNum.String())
-	}
-
-	return totalSeconds, nil
-}
-*/
 
 func QuadletOptionToPodman(qType string, options map[string]schema.SchemaOption, k string, v string) (string, error) {
 	var buf bytes.Buffer

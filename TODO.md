@@ -227,10 +227,11 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 ## 3. CLI / flag handling
 
-- [ ] **`-s` only works before the subcommand.** **[verified]**
+- [x] **`-s` only works before the subcommand.** **[verified]**
   `quadctl start -s` → `flag provided but not defined: -s`, exit 2 — while
   `quadctl start --help` says "Use -s to start under systemd". Register the global flags in
   every subcommand `FlagSet` (or parse them out first).
+  *Fixed by `PLAN.md` 2.2:* `globalFlags` is registered on every subcommand's `FlagSet`.
 
 - [ ] **`systemd.enabled=true` in the config can't be overridden from the CLI.** **[verified]**
   `InitConfig` only ever sets `IsSystemd = true` (`util/files.go:48`) and runs *after* flag
@@ -238,26 +239,32 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   command, and `quadctl run` becomes permanently unreachable (`main.go:99`). Needs a
   `--no-systemd` (or `-s=false` honored after config load).
 
-- [ ] **`quadctl -s run` prints an explanation and exits 0** (`main.go:99-101`). Should exit
+- [x] **`quadctl -s run` prints an explanation and exits 0** (`main.go:99-101`). Should exit
   non-zero — it's a refused command, not a successful one.
+  *Fixed by `PLAN.md` 2.2:* `run`'s `RunSystemd` returns an error, so it exits 1.
 
-- [ ] **Unreachable dead branch + inconsistent messages.** `ProcessSubcommand` already exits
+- [x] **Unreachable dead branch + inconsistent messages.** `ProcessSubcommand` already exits
   on an unknown subcommand with `Invalid command: x` and *no* usage (`util/flags.go:331`),
   so `main.go:116-119`'s `Unknown command: x` + `PrintUsage()` can never run. Keep one, and
   it should be the one that prints usage.
+  *Fixed by `PLAN.md` 2.2:* one lookup in `registry.processSubcommand`, and it prints usage.
 
-- [ ] **`PrintLogsUsage` prints the `stats` flag set** (`util/flags.go:319`).
+- [x] **`PrintLogsUsage` prints the `stats` flag set** (`util/flags.go:319`).
+  *Fixed by `PLAN.md` 2.2:* help is rendered from the subcommand's own row in the registry.
 
 - [ ] **Flag sets are inconsistent across subcommands.**
   `-p/--print` is missing from `ps`/`stats`/`images`/`list`; `-v/--verbose` exists only on
   `create/start/run/stop/remove`; `-f/--file` exists on almost everything *except* `logs`;
   `-a` means "all quadlets under src.path" (`IsShowAll`) for most commands but "all three
-  configured paths" (`IsListAll`) for `list`. Worth a single table of
-  command → supported flags, then generating the flag sets from it.
+  configured paths" (`IsListAll`) for `list`.
+  *Half done by `PLAN.md` 2.2:* the table exists (`registry.go`) and each flag is declared
+  once, so the help text no longer drifts. **Still open:** which subcommands take which flag
+  is unchanged, and `-a` still means two different things. Phase 4.
 
-- [ ] **Every flag is listed twice in help output** because short and long forms are
+- [x] **Every flag is listed twice in help output** because short and long forms are
   registered as separate flags (`quadctl ls -h` shows `-a` and `-all` as two entries with
   the same text). A small custom usage printer would collapse these.
+  *Fixed by `PLAN.md` 2.2:* `printFlags` renders one entry per `flagSpec` ("-a, --all").
 
 - [ ] **`status -p` has no effect** on the non-systemd path (it calls `HandlePS` directly),
   and `-l/--long` is accepted but meaningless there (`main.go:56-64`).
@@ -349,23 +356,17 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 ## 5. Structure & maintainability
 
-- [ ] **Split `core/handlers.go` (1827 lines) into per-command files.** Suggested layout:
-  - `core/command.go` — `Command`, `RunCommands`, `runCommand*` helpers (mostly today's `commands.go`)
-  - `core/pull.go`, `core/create.go`, `core/start.go`, `core/run.go`, `core/stop.go`, `core/remove.go` — podman path
-  - `core/systemd_install.go` — `HandleSystemdCreate`/`Remove`, prune, generator validation
-  - `core/systemd_lifecycle.go` — `HandleSystemdStart`/`Stop`/`Status`/`Logs`/`Reload`
-  - `core/inspect.go` — `HandlePS`/`Stats`/`Images`/`Logs`
-  - `core/list.go` — tree listing
-  - `core/generate.go` — `generateCreateCommand`/`StartupCommand`/`RunCommand`/`StopCommand`
-  - `core/podman.go` — `resourceExists`, `getContainerPS`, `listSystemdInstalledQuadlets`
-  Pure file moves first, no behavior change, so the diff stays reviewable.
+- [x] **Split `core/handlers.go` (1827 lines) into per-command files.**
+  *Done in `PLAN.md` 2.1*, to the layout suggested here: `core/command.go`, `pull.go`,
+  `create.go`, `start.go`, `run.go`, `stop.go`, `remove.go`, `systemd_install.go`,
+  `systemd_lifecycle.go`, `inspect.go`, `list.go`, `generate.go`, `podman.go`. Pure moves,
+  no behavior change.
 
-- [ ] **Replace the three parallel switches with one command registry.** A subcommand is
-  currently declared in three places that must be kept in sync — `flagSets` +
-  `Print*Usage` (`util/flags.go`), the dispatch switch (`main.go:45-120`), and the
-  handler pair in `core`. A `[]Command{Name, Aliases, Flags, Usage, Run, RunSystemd}`
-  table would collapse them and structurally fix the "unknown command" duplication, the
-  `-s`-placement problem and the copy-paste flag drift above.
+- [x] **Replace the three parallel switches with one command registry.** A subcommand was
+  declared in three places that had to be kept in sync — `flagSets` + `Print*Usage`
+  (`util/flags.go`), the dispatch switch (`main.go:45-120`), and the handler pair in `core`.
+  *Done in `PLAN.md` 2.2:* `registry.go` is the one table. See §3 for what it fixed on the
+  way through.
 
 - [x] **Stop calling `os.Exit` from library code** — 54 call sites across `util/` and
   `core/`. It makes handlers untestable, skips temp-dir cleanup, and is why exit codes are
@@ -376,27 +377,28 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `resName/resType` derivation appears at `core/handlers.go:132-138`, `185-190`, `226-230`,
   `248-254`, `1551-1596`, `1635-1640`.
 
-- [ ] **Dead code to delete or wire up.** `schema/validator.go` (~256 lines) is entirely
-  self-referential — the `Handler`/`Validate` machinery is never called, so no option value
-  is ever validated despite every schema option carrying validators. Also unused:
-  `GetKubeSchema`/`GetImageSchema`/`GetBuildSchema`, `ValidateSchema`,
+- [ ] **Dead code to delete or wire up.** `schema/validator.go` (~256 lines) was deleted in
+  `PLAN.md` 2.3: its `Handler`/`AttributeSchema` machinery was a parallel model that shared
+  nothing with the live `SchemaOption` one, so a future `validate` command (`FEATURES.md`)
+  gains nothing from it. **Still unused, still open:**
+  `GetKubeSchema`/`GetImageSchema`/`GetBuildSchema`/`GetVolumeSchema`, `ValidateSchema`,
   `GetPodmanOptionsMap`/`assemblePodmanOptionsMap`, `util.ListFiles`, `util.DeleteFile`,
   `optKubeAutoUpdate` (`schema/kube.go:58`, shadowed by `optAutoUpdate()` in the list).
-  Decide: wire validation up (see `FEATURES.md`) or drop it.
 
-- [ ] **Drop the dot-imports** (`main.go:10-11`, `util/options.go:4`) — `. "…/core"`,
+- [x] **Drop the dot-imports** (`main.go:10-11`, `util/options.go:4`) — `. "…/core"`,
   `. "…/schema"` make it impossible to tell where `Command`, `SchemaOption`,
-  `GetContainerOptions` come from.
+  `GetContainerOptions` come from. *Done in `PLAN.md` 2.3.*
 
-- [ ] **Commented-out code blocks** left in place: `util/parser.go:683-725` (`ParseDurationToSeconds`),
+- [x] **Commented-out code blocks** left in place: `util/parser.go:683-725` (`ParseDurationToSeconds`),
   `:740-747`, `util/tui.go:98-116`, `core/handlers.go:1790-1806`, `core/commands.go:271-273`,
-  `:285`.
+  `:285`. *Done in `PLAN.md` 2.3* — also the stale `.quadlets` design note at
+  `util/parser.go:181-193`, which describes work that has since shipped.
 
 ## 6. Tests, CI, repo hygiene
 
-- [ ] **`go vet ./...` currently fails** — `schema/validator.go:181-182`, duplicate
+- [x] **`go vet ./...` currently fails** — `schema/validator.go:181-182`, duplicate
   `json:"ignore-empty"` tags. CI (`.github/workflows/go.yml`) doesn't run vet, so it went
-  unnoticed. Add `go vet` to CI.
+  unnoticed. Add `go vet` to CI. *Fixed by `PLAN.md` 2.3:* the file is gone and CI vets.
 
 - [ ] **Test coverage is one file** (`util/options_test.go`) covering schema→podman option
   templating only. Nothing covers the parser, dependency resolution, topological sort,
@@ -418,8 +420,8 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   directly but marked `// indirect`.
 
 - [ ] **Release workflow doesn't run tests or vet** before publishing binaries
-  (`.github/workflows/build_release.yml:25`), and `build.sh` builds `main.go` rather than
-  the package (`go build -o quadctl .`).
+  (`.github/workflows/build_release.yml:25`). Phase 5. `build.sh` now builds the package
+  (`PLAN.md` 2.2 — it had to, once `main` was more than one file).
 
 - [ ] **CI only triggers on `main`** (`.github/workflows/go.yml:6-10`), so nothing runs on
   this branch.

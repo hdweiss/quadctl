@@ -46,7 +46,7 @@ go test -v -run TestVolumeQuadletOptionsToPodmanTableDriven ./util/   # single t
 go vet ./...
 ```
 
-CI (`.github/workflows/go.yml`) just runs `go build -v ./...` and `go test -v ./...` on push/PR to `main`. There is no linter configured. `go vet ./...` currently fails on `schema/validator.go:181-182` (`PLAN.md` 2.3) — that failure is pre-existing, not something you introduced.
+CI (`.github/workflows/go.yml`) runs `go build -v ./...`, `go vet ./...` and `go test -v ./...` on push/PR to `main`. There is no linter configured. Vet is clean — keep it that way.
 
 Tests live beside the code with fixtures in `testdata/`. `.gitignore` is anchored to the
 repo root (`/*.container`, …) precisely so those fixtures can be committed — don't widen it
@@ -72,7 +72,7 @@ Four packages, each with a distinct responsibility:
     shells out goes through the `Runner` on the run state: `ExecRunner` in production,
     `RecordingRunner` in tests, which records invocations and answers from a canned table.
     Do not reach for `exec.Command` directly in `core` or `util`.
-- **`schema`** — a hand-built, declarative model of every Quadlet/Podman option (`container.go`, `pod.go`, `network.go`, `volume.go`, `kube.go`, `build.go`, `image.go`). Each `opt*()` function returns a `SchemaOption` describing one key: its Quadlet-file spelling, its Podman CLI equivalent, a Go `text/template` for rendering each into command args, and a validator. `validator.go` implements the regex/format validation referenced by schema options. This schema is what lets `core` translate parsed quadlet key/values into the right `podman <verb>` arguments — when Podman/Quadlet adds or changes an option, this is where support gets added, not in `core`.
+- **`schema`** — a hand-built, declarative model of every Quadlet/Podman option (`container.go`, `pod.go`, `network.go`, `volume.go`, `kube.go`, `build.go`, `image.go`). Each `opt*()` function returns a `SchemaOption` describing one key: its Quadlet-file spelling, its Podman CLI equivalent, a Go `text/template` for rendering each into command args, and a validator regex (filled in by `PopulateValidators`, and currently unused — see `FEATURES.md`'s `validate` command). This schema is what lets `core` translate parsed quadlet key/values into the right `podman <verb>` arguments — when Podman/Quadlet adds or changes an option, this is where support gets added, not in `core`.
 - **`core`** — command execution. One `Handle*` pair per subcommand, each returning
   `([]Command, error)` (or just `error` for the ones that print rather than generate
   commands): a non-systemd version that shells out to `podman` directly (walking the sorted
