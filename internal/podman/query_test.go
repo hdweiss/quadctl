@@ -1,4 +1,4 @@
-package core
+package podman
 
 import (
 	"strings"
@@ -70,7 +70,7 @@ func TestGetContainerPSFiltersExactly(t *testing.T) {
 	}
 
 	quadlets := []*quadlet.Quadlet{{ID: "web", Type: ".container", ResourceName: "systemd-web"}}
-	info, err := getContainerPS(runner, quadlets)
+	info, err := ContainerPS(runner, quadlets)
 	if err != nil {
 		t.Fatalf("getContainerPS: %v", err)
 	}

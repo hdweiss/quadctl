@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 
+	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
@@ -27,7 +28,7 @@ func HandleCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Comman
 		// will actually give it, not the file's base name: a quadlet with ContainerName= set
 		// looked absent on every run, so create ran every time and podman refused the
 		// duplicate name (TODO.md section 2).
-		if !resourceExists(quadctl.Runner, q.Type, q.ResourceName) {
+		if !podman.ResourceExists(quadctl.Runner, q.Type, q.ResourceName) {
 			// For 'run' command, skip creating containers since 'podman run' will create them if they don't exist.
 			if quadctl.Subcommand == "run" && q.Type == ".container" {
 				continue

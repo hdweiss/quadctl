@@ -3,6 +3,7 @@ package core
 import (
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
@@ -19,7 +20,7 @@ func HandleStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command
 	commands = append(commands, cmds...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
-	if info, err := getContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
+	if info, err := podman.ContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
 		if strings.Contains(info[0][3], "Up") {
 			cmd, err := HandleStop(quadctl, quadlets)
 			if err != nil {

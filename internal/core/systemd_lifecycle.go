@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/tui"
@@ -28,7 +29,7 @@ func HandleSystemdStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]
 	commands = append(commands, cmd...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
-	if info, err := getContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
+	if info, err := podman.ContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
 		cmd, err := HandleSystemdStop(quadctl, quadlets, false)
 		if err != nil {
 			return nil, err

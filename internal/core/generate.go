@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
@@ -48,7 +49,7 @@ func generateCreateCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string
 					case "PodmanArgs": // Handled above
 						continue
 					default:
-						podmanArgs, err := quadlet.QuadletOptionToPodman("volume", options, k, v)
+						podmanArgs, err := podman.OptionArgs("volume", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -83,7 +84,7 @@ func generateCreateCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string
 						continue // NetworkDeleteOnStop is for systemd and does not affect Podman CLI
 					case "PodmanArgs": // Handled above
 					default:
-						podmanArgs, err := quadlet.QuadletOptionToPodman("network", options, k, v)
+						podmanArgs, err := podman.OptionArgs("network", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -118,7 +119,7 @@ func generateCreateCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string
 					case "Network":
 						cmd = append(cmd, "--network", q.ResolveRef(v))
 					default:
-						podmanArgs, err := quadlet.QuadletOptionToPodman("pod", options, k, v)
+						podmanArgs, err := podman.OptionArgs("pod", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -199,7 +200,7 @@ func generateCreateCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string
 						cmd = append(cmd, "--pod", q.PodResourceName)
 					case "PodmanArgs": // Handled above
 					default:
-						podmanArgs, err := quadlet.QuadletOptionToPodman("container", options, k, v)
+						podmanArgs, err := podman.OptionArgs("container", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -250,7 +251,7 @@ func generateStartupCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]strin
 					case "PodmanArgs": // Handled above
 						continue
 					default:
-						podmanArgs, err := quadlet.QuadletOptionToPodman("kube", options, k, v)
+						podmanArgs, err := podman.OptionArgs("kube", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue

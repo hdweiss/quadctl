@@ -100,45 +100,6 @@ func TestOptionValues(t *testing.T) {
 	}
 }
 
-// TestQuadletOptionToPodmanKeepsValuesWhole is the argv-boundary test: the rendered template
-// is cut into arguments before the value is put back, so a value containing a space is one
-// argument no matter which shape of template carries it.
-func TestQuadletOptionToPodmanKeepsValuesWhole(t *testing.T) {
-	options := schema.QuadletOptions("container")
-
-	tests := []struct {
-		key   string
-		value string
-		want  []string
-	}{
-		// "{{.Key}} {{.Value}}" - flag then value.
-		{"Environment", "GREETING=hello world", []string{"--env", "GREETING=hello world"}},
-		{"HealthCmd", "curl -f http://localhost/health", []string{"--health-cmd", "curl -f http://localhost/health"}},
-		// "--security-opt apparmor={{.Value}}" - the value is embedded in a token.
-		{"AppArmor", "my profile", []string{"--security-opt", "apparmor=my profile"}},
-		// "{{.Value}}" alone.
-		{"Image", "docker.io/library/alpine:3.20", []string{"docker.io/library/alpine:3.20"}},
-		// A template that never mentions the value still renders its flag.
-		{"ReadOnly", "true", []string{"--read-only"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
-			got, err := QuadletOptionToPodman("container", options, tt.key, tt.value)
-			if err != nil {
-				t.Fatalf("QuadletOptionToPodman: %v", err)
-			}
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("got %#v, want %#v", got, tt.want)
-			}
-		})
-	}
-
-	if _, err := QuadletOptionToPodman("container", options, "NoSuchOption", "x"); err == nil {
-		t.Error("expected an error for an option the schema doesn't define")
-	}
-}
-
 // TestParseIniFileValueSemantics covers what the INI layer does and, as importantly, what it
 // no longer does: it records assignments verbatim and leaves every question of "one value or
 // several" to the schema.

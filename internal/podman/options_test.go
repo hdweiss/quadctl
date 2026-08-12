@@ -1,4 +1,4 @@
-package quadlet
+package podman
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/schema"
+	"slices"
 )
 
 func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
@@ -43,7 +44,7 @@ func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := OptionArgs(tt.qType, tt.options, tt.key, tt.value)
 			// These cases are about the podman spelling of an option, not about argv
 			// boundaries - none of their values contain a space - so the arguments are
 			// joined back into the one-line form the table is written in.
@@ -96,7 +97,7 @@ func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := OptionArgs(tt.qType, tt.options, tt.key, tt.value)
 			// These cases are about the podman spelling of an option, not about argv
 			// boundaries - none of their values contain a space - so the arguments are
 			// joined back into the one-line form the table is written in.
@@ -156,7 +157,7 @@ func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := OptionArgs(tt.qType, tt.options, tt.key, tt.value)
 			// These cases are about the podman spelling of an option, not about argv
 			// boundaries - none of their values contain a space - so the arguments are
 			// joined back into the one-line form the table is written in.
@@ -291,7 +292,7 @@ func TestContainerQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := OptionArgs(tt.qType, tt.options, tt.key, tt.value)
 			// These cases are about the podman spelling of an option, not about argv
 			// boundaries - none of their values contain a space - so the arguments are
 			// joined back into the one-line form the table is written in.
@@ -442,3 +443,42 @@ func TestContainerQuadletOptionsToInspectTableDriven(t *testing.T) {
 	fmt.Println(strings.Join(cmd, " "))
 }
 */
+
+// TestOptionArgsKeepsValuesWhole is the argv-boundary test: the rendered template
+// is cut into arguments before the value is put back, so a value containing a space is one
+// argument no matter which shape of template carries it.
+func TestOptionArgsKeepsValuesWhole(t *testing.T) {
+	options := schema.QuadletOptions("container")
+
+	tests := []struct {
+		key   string
+		value string
+		want  []string
+	}{
+		// "{{.Key}} {{.Value}}" - flag then value.
+		{"Environment", "GREETING=hello world", []string{"--env", "GREETING=hello world"}},
+		{"HealthCmd", "curl -f http://localhost/health", []string{"--health-cmd", "curl -f http://localhost/health"}},
+		// "--security-opt apparmor={{.Value}}" - the value is embedded in a token.
+		{"AppArmor", "my profile", []string{"--security-opt", "apparmor=my profile"}},
+		// "{{.Value}}" alone.
+		{"Image", "docker.io/library/alpine:3.20", []string{"docker.io/library/alpine:3.20"}},
+		// A template that never mentions the value still renders its flag.
+		{"ReadOnly", "true", []string{"--read-only"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got, err := OptionArgs("container", options, tt.key, tt.value)
+			if err != nil {
+				t.Fatalf("QuadletOptionToPodman: %v", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("got %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+
+	if _, err := OptionArgs("container", options, "NoSuchOption", "x"); err == nil {
+		t.Error("expected an error for an option the schema doesn't define")
+	}
+}

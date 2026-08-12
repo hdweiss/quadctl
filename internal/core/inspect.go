@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/tui"
@@ -14,7 +15,7 @@ import (
 
 func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 
-	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
+	psInfo, err := podman.ContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		return err
 	}
@@ -55,7 +56,7 @@ func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 
 func HandleStats(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 
-	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
+	psInfo, err := podman.ContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		return err
 	}
@@ -86,7 +87,7 @@ func HandleImages(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 	imageInfo := [][]string{}
 
 	// Fetch image info for each container
-	psInfo, err := getContainerPS(r, quadlets)
+	psInfo, err := podman.ContainerPS(r, quadlets)
 	if err != nil {
 		return err
 	}
@@ -205,7 +206,7 @@ func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command,
 	var containerName string
 
 	// Fetch image info for each container
-	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
+	psInfo, err := podman.ContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return commands, nil
