@@ -37,8 +37,12 @@ type State struct {
 	QuadletSchemas map[string]map[string]schema.SchemaOption
 	Runner         Runner // Executes every external command; swapped for a fake in tests
 
-	IsRootful    bool // Derived from the effective uid, not a flag
-	IsSystemd    bool
+	IsRootful bool // Derived from the effective uid, not a flag
+	IsSystemd bool
+	// IsNoSystemd is --no-systemd: the only way to get back to podman-direct mode on a host
+	// whose quadctl.ini sets systemd.enabled=true, since the config is read after the flags.
+	IsNoSystemd bool
+
 	IsPrintOnly  bool
 	IsVerbose    bool
 	IsFile       bool

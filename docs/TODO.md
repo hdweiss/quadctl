@@ -257,11 +257,13 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   every subcommand `FlagSet` (or parse them out first).
   *Fixed by `PLAN.md` 2.2:* `globalFlags` is registered on every subcommand's `FlagSet`.
 
-- [ ] **`systemd.enabled=true` in the config can't be overridden from the CLI.** **[verified]**
-  `InitConfig` only ever sets `IsSystemd = true` (`util/files.go:48`) and runs *after* flag
-  parsing. On a host configured that way there is no way to run a one-off podman-direct
-  command, and `quadctl run` becomes permanently unreachable (`main.go:99`). Needs a
-  `--no-systemd` (or `-s=false` honored after config load).
+- [x] **`systemd.enabled=true` in the config can't be overridden from the CLI.** **[verified]**
+  `InitConfig` only ever set `IsSystemd = true` and ran *after* flag parsing. On a host
+  configured that way there was no way to run a one-off podman-direct command, and
+  `quadctl run` was permanently unreachable.
+  *Fixed by `PLAN.md` Phase 4:* `--no-systemd` is a global flag, `main.resolveSystemdMode`
+  settles the two against each other, and passing `-s` and `--no-systemd` together is an
+  error rather than a silent winner.
 
 - [x] **`quadctl -s run` prints an explanation and exits 0** (`main.go:99-101`). Should exit
   non-zero — it's a refused command, not a successful one.
@@ -368,15 +370,20 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   (`.github/workflows/build_release.yml` has no `-ldflags -X`), so bug reports can't
   identify a build.
 
-- [ ] **Default paths disagree between code and shipped config**: `initState` uses
-  `/etc/containers/systemd/users` for `QuadletUserPath` (`main.go:149`), the template ini
-  uses `{{.home}}/.config/containers/systemd` (`util/config/quadctl.ini:35`).
+- [x] **Default paths disagree between code and shipped config**: `initState` used
+  `/etc/containers/systemd/users` for `QuadletUserPath`, the template ini
+  `{{.home}}/.config/containers/systemd`. *Fixed by `PLAN.md` Phase 4:*
+  `util.DefaultUserQuadletPath` is the XDG path the ini writes — the other one is not
+  writable by the rootless user quadctl was about to create it as. A test fails if the two
+  drift apart again.
 
-- [ ] **Config parsing is silently forgiving** (`util/files.go:24-50`): booleans are
-  one-way and case-sensitive (`use_symbolic_links` only reacts to `true`/`1`,
-  `use_subdirectories` only to `false`/`0`), so `True`, `yes`, `on` are ignored without
-  a word; unknown/misspelled keys are dropped silently. Parse booleans properly and warn
-  on unrecognized keys.
+- [x] **Config parsing is silently forgiving** (`util/files.go:24-50`): booleans were
+  one-way and case-sensitive (`use_symbolic_links` only reacted to `true`/`1`,
+  `use_subdirectories` only to `false`/`0`), so `True`, `yes`, `on` were ignored without
+  a word; unknown/misspelled keys were dropped silently.
+  *Fixed by `PLAN.md` Phase 4:* `parseConfigBool` takes true/false, yes/no, on/off and 1/0
+  in any case and in both directions; a value it can't read and a key quadctl doesn't know
+  both land in `Config.Warnings`, which `main` prints before doing anything else.
 
 ## 5. Structure & maintainability
 
@@ -500,9 +507,11 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `remove_volumes`, `remove_networks` and the `systemd.*` command templates aren't
   mentioned anywhere outside the ini comments.
 
-- [ ] **Truncated comment in the shipped config**: "Replace  with explicit values"
-  (`util/config/quadctl.ini:12` and `:32`) — a word is missing, and it should say which
-  variables (`$HOME`, `$XDG_*`) are not expanded.
+- [x] **Truncated comment in the shipped config**: "Replace  with explicit values"
+  (`util/config/quadctl.ini:12` and `:32`) — a word was missing, and it should say which
+  variables are not expanded. *Fixed by `PLAN.md` Phase 4* while reconciling the
+  `quadlet.user.path` default: both copies now name `$HOME`, `$XDG_CONFIG_HOME`,
+  `$XDG_RUNTIME_DIR` and `${UID}`.
 
 - [x] **Document the podman-direct vs systemd naming difference** once §2's
   `VolumeName`/`NetworkName` inconsistency is resolved. *Done in `PLAN.md` Phase 4:* the

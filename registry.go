@@ -62,6 +62,15 @@ var (
 		Usage:    "Manage services through systemd rather than podman directly",
 		register: boolFlag(func(q *util.State) *bool { return &q.IsSystemd }),
 	}
+	// flagNoSystemd exists because the config is read after the flags are parsed, so a
+	// systemd.enabled=true in quadctl.ini would otherwise turn -s on again no matter what was
+	// typed - leaving no way to run a one-off podman-direct command, and 'run' permanently
+	// unreachable (TODO.md section 3).
+	flagNoSystemd = flagSpec{
+		Name: "no-systemd", Default: "false",
+		Usage:    "Manage services with podman directly, overriding systemd.enabled in quadctl.ini",
+		register: boolFlag(func(q *util.State) *bool { return &q.IsNoSystemd }),
+	}
 	flagFile = flagSpec{
 		Name: "file", Short: "f", Default: "false",
 		Usage:    "Treat the given path as a single quadlet file rather than a directory",
@@ -113,7 +122,7 @@ var (
 
 // globalFlags are accepted before the subcommand and are also registered on every
 // subcommand's flag set, so 'quadctl -s start' and 'quadctl start -s' both work.
-var globalFlags = []flagSpec{flagSystemd}
+var globalFlags = []flagSpec{flagSystemd, flagNoSystemd}
 
 // --- SUBCOMMAND TABLE ---
 

@@ -45,10 +45,13 @@ func run() int {
 		return fail(err)
 	}
 	quadctl.Config = cfg
-	// systemd.enabled makes systemd mode the default. It is applied after the flags because
-	// there is no way to turn it back off from the CLI yet (TODO.md section 3).
-	if cfg.SystemdEnabled {
-		quadctl.IsSystemd = true
+	// A key quadctl doesn't know, or a boolean it couldn't read, is reported rather than
+	// dropped: a misspelled setting otherwise looks exactly like one that doesn't work.
+	for _, w := range cfg.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+	if err := resolveSystemdMode(quadctl, cfg); err != nil {
+		return fail(err)
 	}
 
 	cmd, err := registry.processSubcommand(quadctl)
@@ -92,6 +95,23 @@ func run() int {
 	}
 
 	return 0
+}
+
+// resolveSystemdMode settles whether this run goes through systemd. The config is read after
+// the flags - it may name the search directory a flag argument refers to - so systemd.enabled
+// is applied here rather than at parse time, and --no-systemd is what makes it overridable
+// from the command line (TODO.md section 3).
+func resolveSystemdMode(quadctl *util.State, cfg *util.Config) error {
+	if quadctl.IsSystemd && quadctl.IsNoSystemd {
+		return fmt.Errorf("-s/--systemd and --no-systemd contradict each other; pass one or neither")
+	}
+	if cfg.SystemdEnabled {
+		quadctl.IsSystemd = true
+	}
+	if quadctl.IsNoSystemd {
+		quadctl.IsSystemd = false
+	}
+	return nil
 }
 
 // fail reports err and yields the exit code for it. util.ErrUsage means usage has already

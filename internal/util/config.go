@@ -3,8 +3,10 @@ package util
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 )
@@ -40,6 +42,59 @@ type Config struct {
 	// Values is the file as read, before any of the above was derived from it. Kept for
 	// diagnostics and for reporting keys quadctl doesn't recognize.
 	Values map[string]string
+
+	// Warnings is what quadctl could not make sense of in the file: a key it does not know,
+	// or a value that should have been a boolean and wasn't. Both used to be dropped in
+	// silence, which is how a misspelled key looks exactly like a setting that doesn't work.
+	// main prints these before doing anything else.
+	Warnings []string
+}
+
+// configBools maps each boolean configuration key to the field it sets.
+func (c *Config) configBools() map[string]*bool {
+	return map[string]*bool{
+		"use_subdirectories":  &c.UseSubdirectories,
+		"use_symbolic_links":  &c.UseSymbolicLinks,
+		"auto_reload_systemd": &c.IsReloadSystemd,
+		"remove_volumes":      &c.IsRemoveVolumes,
+		"remove_networks":     &c.IsRemoveNetworks,
+		"systemd.enabled":     &c.SystemdEnabled,
+	}
+}
+
+// configStrings maps each plain string configuration key to the field it sets.
+func (c *Config) configStrings() map[string]*string {
+	return map[string]*string{
+		"quadlet.src.path":  &c.QuadletSrcPath,
+		"quadlet.root.path": &c.QuadletRootPath,
+		"quadlet.user.path": &c.QuadletUserPath,
+	}
+}
+
+// configTemplates maps each systemd command key to the template it parses into.
+func (c *Config) configTemplates() map[string]**template.Template {
+	return map[string]**template.Template{
+		"systemd.start":  &c.SystemdStartTmpl,
+		"systemd.stop":   &c.SystemdStopTmpl,
+		"systemd.status": &c.SystemdStatusTmpl,
+		"systemd.reload": &c.SystemdReloadTmpl,
+		"systemd.logs":   &c.SystemdLogsTmpl,
+	}
+}
+
+// parseConfigBool reads a boolean the way someone writing a config file would expect to be
+// able to write one. Each key used to be compared against a hardcoded pair of spellings, and
+// in one direction only: use_symbolic_links reacted to "true" and "1" but not "True" or
+// "yes", use_subdirectories only to "false" and "0", and anything else was dropped without a
+// word (TODO.md section 4).
+func parseConfigBool(val string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "true", "t", "yes", "y", "on", "1":
+		return true, true
+	case "false", "f", "no", "n", "off", "0":
+		return false, true
+	}
+	return false, false
 }
 
 // DefaultConfig returns the configuration quadctl uses before quadctl.ini is consulted. The
@@ -49,7 +104,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		QuadletRootPath:   "/etc/containers/systemd",
-		QuadletUserPath:   "/etc/containers/systemd/users",
+		QuadletUserPath:   DefaultUserQuadletPath(),
 		UseSubdirectories: true,
 		UseSymbolicLinks:  false,
 		IsReloadSystemd:   true,
@@ -64,6 +119,18 @@ func DefaultConfig() *Config {
 	}
 }
 
+// DefaultUserQuadletPath is the rootless generator directory quadctl assumes when
+// quadlet.user.path is unset: the XDG one, which is also what the shipped quadctl.ini writes.
+// The code used to default to /etc/containers/systemd/users instead - a path the rootless
+// user quadctl was about to create it as generally cannot write (TODO.md section 4).
+func DefaultUserQuadletPath() string {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		base = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(base, "containers", "systemd")
+}
+
 // LoadConfig reads quadctl.ini over the defaults. isRootful decides how hard it insists on
 // QUADCTL_CONFIG_DIR: root does not read the invoking user's $HOME, so falling back to it
 // would silently use a different config than the same command run without sudo.
@@ -76,53 +143,36 @@ func LoadConfig(isRootful bool) (*Config, error) {
 	cfg := DefaultConfig()
 	cfg.Values = values
 
-	if val, ok := values["use_subdirectories"]; ok && (val == "false" || val == "0") {
-		cfg.UseSubdirectories = false
-	}
-	if val, ok := values["use_symbolic_links"]; ok && (val == "true" || val == "1") {
-		cfg.UseSymbolicLinks = true
-	}
-	if val, ok := values["auto_reload_systemd"]; ok && (val == "false" || val == "0") {
-		cfg.IsReloadSystemd = false
-	}
-	if val, ok := values["remove_volumes"]; ok && (val == "false" || val == "0") {
-		cfg.IsRemoveVolumes = false
-	}
-	if val, ok := values["remove_networks"]; ok && (val == "false" || val == "0") {
-		cfg.IsRemoveNetworks = false
-	}
-	if val, ok := values["quadlet.src.path"]; ok && val != "" {
-		cfg.QuadletSrcPath = val
-	}
-	if val, ok := values["quadlet.root.path"]; ok && val != "" {
-		cfg.QuadletRootPath = val
-	}
-	if val, ok := values["quadlet.user.path"]; ok && val != "" {
-		cfg.QuadletUserPath = val
-	}
-	if val, ok := values["systemd.enabled"]; ok && (val == "true" || val == "1") {
-		cfg.SystemdEnabled = true
-	}
+	bools, strs, tmpls := cfg.configBools(), cfg.configStrings(), cfg.configTemplates()
 
-	for _, t := range []struct {
-		key  string
-		dest **template.Template
-	}{
-		{"systemd.start", &cfg.SystemdStartTmpl},
-		{"systemd.stop", &cfg.SystemdStopTmpl},
-		{"systemd.status", &cfg.SystemdStatusTmpl},
-		{"systemd.reload", &cfg.SystemdReloadTmpl},
-		{"systemd.logs", &cfg.SystemdLogsTmpl},
-	} {
-		val, ok := values[t.key]
-		if !ok || val == "" {
-			continue
+	// Sorted, so a file with several problems reports them in the same order every time.
+	for _, key := range slices.Sorted(maps.Keys(values)) {
+		val := values[key]
+		switch {
+		case bools[key] != nil:
+			parsed, ok := parseConfigBool(val)
+			if !ok {
+				cfg.Warnings = append(cfg.Warnings,
+					fmt.Sprintf("config key %s: %q is not a true/false value, ignoring it", key, val))
+				continue
+			}
+			*bools[key] = parsed
+		case strs[key] != nil:
+			if val != "" {
+				*strs[key] = val
+			}
+		case tmpls[key] != nil:
+			if val == "" {
+				continue
+			}
+			parsed, err := template.New(key).Parse(val)
+			if err != nil {
+				return nil, fmt.Errorf("config key %s is not a valid template: %w", key, err)
+			}
+			*tmpls[key] = parsed
+		default:
+			cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("config key %s is not one quadctl knows, ignoring it", key))
 		}
-		parsed, err := template.New(t.key).Parse(val)
-		if err != nil {
-			return nil, fmt.Errorf("config key %s is not a valid template: %w", t.key, err)
-		}
-		*t.dest = parsed
 	}
 
 	return cfg, nil

@@ -45,8 +45,11 @@ func TestRegistryIsWellFormed(t *testing.T) {
 		// Every subcommand accepts the global flags too - that is the whole point of
 		// registering them per flag set.
 		for _, f := range globalFlags {
-			if c.flagSet.Lookup(f.Name) == nil || c.flagSet.Lookup(f.Short) == nil {
-				t.Errorf("%s: does not accept the global -%s/--%s", c.Name, f.Short, f.Name)
+			if c.flagSet.Lookup(f.Name) == nil {
+				t.Errorf("%s: does not accept the global --%s", c.Name, f.Name)
+			}
+			if f.Short != "" && c.flagSet.Lookup(f.Short) == nil {
+				t.Errorf("%s: does not accept the global -%s", c.Name, f.Short)
 			}
 		}
 		for _, f := range c.Flags {
@@ -83,6 +86,49 @@ func TestSystemdFlagAcceptedEitherSide(t *testing.T) {
 			c := r.byName[r.args[0]]
 			if err := c.flagSet.Parse(r.args[1:]); err != nil {
 				t.Fatalf("parsing %v: %v", r.args[1:], err)
+			}
+			if quadctl.IsSystemd != tt.want {
+				t.Errorf("IsSystemd = %v, want %v", quadctl.IsSystemd, tt.want)
+			}
+		})
+	}
+}
+
+// TestResolveSystemdMode covers TODO.md section 3: systemd.enabled=true in quadctl.ini used
+// to be unconditional, so a host configured that way had no way back to podman-direct mode
+// and 'quadctl run' was permanently unreachable.
+func TestResolveSystemdMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured bool // systemd.enabled
+		systemd    bool // -s
+		noSystemd  bool // --no-systemd
+		want       bool
+		wantErr    bool
+	}{
+		{name: "neither", want: false},
+		{name: "-s alone", systemd: true, want: true},
+		{name: "systemd.enabled alone", configured: true, want: true},
+		{name: "--no-systemd overrides the config", configured: true, noSystemd: true, want: false},
+		{name: "--no-systemd alone is a no-op", noSystemd: true, want: false},
+		{name: "-s with --no-systemd contradicts", systemd: true, noSystemd: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quadctl := &util.State{IsSystemd: tt.systemd, IsNoSystemd: tt.noSystemd}
+			cfg := util.DefaultConfig()
+			cfg.SystemdEnabled = tt.configured
+
+			err := resolveSystemdMode(quadctl, cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error for contradictory flags")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveSystemdMode: %v", err)
 			}
 			if quadctl.IsSystemd != tt.want {
 				t.Errorf("IsSystemd = %v, want %v", quadctl.IsSystemd, tt.want)
