@@ -5,8 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fkmiec/quadctl/internal/util"
-
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
@@ -29,7 +28,7 @@ func isTerminal(f *os.File) bool {
 // UseColor decides whether to emit ANSI escapes. Colour used to go out unconditionally, so
 // `quadctl ps > out.txt` wrote escape codes into the file. Honours --no-color, the NO_COLOR
 // convention (https://no-color.org) and TERM=dumb, and otherwise only colours a terminal.
-func UseColor(quadctl *util.State) bool {
+func UseColor(quadctl *quadlet.State) bool {
 	if quadctl.IsNoColor || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return false
 	}
@@ -38,7 +37,7 @@ func UseColor(quadctl *util.State) bool {
 
 // tableStyle picks the table rendering to match. The plain style is still a table, just
 // without the escape codes that a pipe has no use for.
-func tableStyle(quadctl *util.State) table.Style {
+func tableStyle(quadctl *quadlet.State) table.Style {
 	if UseColor(quadctl) {
 		return table.StyleColoredYellowWhiteOnBlack
 	}
@@ -48,7 +47,7 @@ func tableStyle(quadctl *util.State) table.Style {
 // useSpinner reports whether a command should animate while it runs. A spinner redraws its
 // line, which only means anything on a terminal; into a pipe it is noise, and in print mode
 // nothing runs at all.
-func useSpinner(quadctl *util.State) bool {
+func useSpinner(quadctl *quadlet.State) bool {
 	return !quadctl.IsPrintOnly && isTerminal(os.Stdout)
 }
 
@@ -65,12 +64,12 @@ func label(verb, kind, name string) string {
 }
 
 // quadletLabel is label for the podman resource a quadlet describes.
-func quadletLabel(verb string, q *util.Quadlet) string {
+func quadletLabel(verb string, q *quadlet.Quadlet) string {
 	return label(verb, q.Type, q.DisplayName())
 }
 
 // unitLabel is label for the systemd unit a quadlet generates. It names the unit rather than
 // the podman resource, because that is what the systemctl command being run acts on.
-func unitLabel(verb string, q *util.Quadlet) string {
+func unitLabel(verb string, q *quadlet.Quadlet) string {
 	return label(verb, q.Type, q.ServiceName)
 }

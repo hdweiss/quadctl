@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
 // TestLabelDropsTheExtension covers TODO.md section 4: output read "Systemd stopping
 // .container app" next to "Starting .container app", printing the raw file extension as
 // though it were a word.
 func TestLabelDropsTheExtension(t *testing.T) {
-	q := &util.Quadlet{ID: "app", Type: ".container", ResourceName: "web-app", ServiceName: "app"}
+	q := &quadlet.Quadlet{ID: "app", Type: ".container", ResourceName: "web-app", ServiceName: "app"}
 
 	if got, want := quadletLabel("Starting", q), "Starting container web-app"; got != want {
 		t.Errorf("quadletLabel = %q, want %q", got, want)
@@ -23,7 +23,7 @@ func TestLabelDropsTheExtension(t *testing.T) {
 		t.Errorf("unitLabel = %q, want %q", got, want)
 	}
 	// A .kube has no resource name of its own; the file's base name stands in.
-	kube := &util.Quadlet{ID: "site", Type: ".kube"}
+	kube := &quadlet.Quadlet{ID: "site", Type: ".kube"}
 	if got, want := quadletLabel("Creating", kube), "Creating kube site"; got != want {
 		t.Errorf("quadletLabel(kube) = %q, want %q", got, want)
 	}
@@ -36,21 +36,21 @@ func TestUseColorRespectsNoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-256color")
 
-	if UseColor(&util.State{IsNoColor: true}) {
+	if UseColor(&quadlet.State{IsNoColor: true}) {
 		t.Error("--no-color should disable colour")
 	}
 	t.Setenv("NO_COLOR", "1")
-	if UseColor(&util.State{}) {
+	if UseColor(&quadlet.State{}) {
 		t.Error("NO_COLOR should disable colour")
 	}
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "dumb")
-	if UseColor(&util.State{}) {
+	if UseColor(&quadlet.State{}) {
 		t.Error("TERM=dumb should disable colour")
 	}
 	// And in any case, output that isn't going to a terminal is never coloured.
 	t.Setenv("TERM", "xterm-256color")
-	if UseColor(&util.State{}) != isTerminal(os.Stdout) {
+	if UseColor(&quadlet.State{}) != isTerminal(os.Stdout) {
 		t.Error("colour should follow the TTY check once nothing else has vetoed it")
 	}
 }
@@ -90,7 +90,7 @@ func TestPrintWarningsVisibility(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			out := captureStderr(t, func() {
-				printWarnings(&util.State{IsVerbose: tt.verbose}, commands)
+				printWarnings(&quadlet.State{IsVerbose: tt.verbose}, commands)
 			})
 			for _, want := range tt.want {
 				if !strings.Contains(out, want) {

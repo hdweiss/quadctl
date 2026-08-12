@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
-	"github.com/fkmiec/quadctl/internal/util"
 )
 
 func resourceExists(r runner.Runner, qType string, name string) bool {
@@ -25,7 +25,7 @@ func resourceExists(r runner.Runner, qType string, name string) bool {
 	return runner.RunSilent(r, inspectCmd) == nil
 }
 
-func listSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util.Quadlet) ([][]string, error) {
+func listSystemdInstalledQuadlets(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}},{{.Path}},{{.UnitName}},{{.Status}}"}
 	output, err := runner.RunCaptured(quadctl.Runner, cmd)
 	if err != nil {
@@ -64,7 +64,7 @@ func listSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util.Quadlet)
 // detect that it still needs to be installed. `systemctl is-active` alone can't be
 // used for that check since it reports "inactive" both for a stopped-but-installed
 // unit and for a unit that was never installed at all.
-func listInstalledQuadletsViaSystemctl(quadctl *util.State, quadlets []*util.Quadlet) ([][]string, error) {
+func listInstalledQuadletsViaSystemctl(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([][]string, error) {
 	var info [][]string
 	for _, q := range quadlets {
 		loadArgs := []string{"systemctl"}
@@ -93,7 +93,7 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.State, quadlets []*util.Qua
 	return info, nil
 }
 
-func getContainerPS(r runner.Runner, quadlets []*util.Quadlet) ([][]string, error) {
+func getContainerPS(r runner.Runner, quadlets []*quadlet.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.PodName}}|{{.Status}}|{{.Ports}}|{{.Image}}|{{.Created}}"}
 	output, err := runner.RunCaptured(r, cmd)
 	if err != nil {
@@ -125,7 +125,7 @@ func getContainerPS(r runner.Runner, quadlets []*util.Quadlet) ([][]string, erro
 // quadlet's, which made the quadlet `web` claim an unrelated container called `myweb`; it was
 // only ever a way to paper over quadctl and the quadlet generator disagreeing about names,
 // and PLAN.md Phase 4 removed the disagreement.
-func quadletOwnsContainer(q *util.Quadlet, name, pod string) bool {
+func quadletOwnsContainer(q *quadlet.Quadlet, name, pod string) bool {
 	switch q.Type {
 	case ".container":
 		if name == q.ResourceName {

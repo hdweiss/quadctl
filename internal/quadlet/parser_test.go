@@ -1,4 +1,4 @@
-package util
+package quadlet
 
 import (
 	"github.com/fkmiec/quadctl/internal/schema"

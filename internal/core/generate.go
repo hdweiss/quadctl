@@ -6,11 +6,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
 // generateCreateCommand creates the base 'podman ... create' string.
-func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []string) {
+func generateCreateCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string, []string) {
 	var warnings []string
 	var cmd []string
 
@@ -34,7 +34,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		if volSec, ok := q.Sections["Volume"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(volSec)...)
 			for _, k := range slices.Sorted(maps.Keys(volSec)) {
-				for _, v := range util.OptionValues(options, k, volSec[k]) {
+				for _, v := range quadlet.OptionValues(options, k, volSec[k]) {
 					switch k {
 					case "Type":
 						continue // Type is not a Podman CLI option
@@ -48,7 +48,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					case "PodmanArgs": // Handled above
 						continue
 					default:
-						podmanArgs, err := util.QuadletOptionToPodman("volume", options, k, v)
+						podmanArgs, err := quadlet.QuadletOptionToPodman("volume", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -71,7 +71,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		if netSec, ok := q.Sections["Network"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(netSec)...)
 			for _, k := range slices.Sorted(maps.Keys(netSec)) {
-				for _, v := range util.OptionValues(options, k, netSec[k]) {
+				for _, v := range quadlet.OptionValues(options, k, netSec[k]) {
 					switch k {
 					case "NetworkName":
 						// Folded into q.ResourceName and appended as the positional name
@@ -83,7 +83,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 						continue // NetworkDeleteOnStop is for systemd and does not affect Podman CLI
 					case "PodmanArgs": // Handled above
 					default:
-						podmanArgs, err := util.QuadletOptionToPodman("network", options, k, v)
+						podmanArgs, err := quadlet.QuadletOptionToPodman("network", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -107,7 +107,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		if podSec, ok := q.Sections["Pod"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(podSec)...)
 			for _, k := range slices.Sorted(maps.Keys(podSec)) {
-				for _, v := range util.OptionValues(options, k, podSec[k]) {
+				for _, v := range quadlet.OptionValues(options, k, podSec[k]) {
 					switch k {
 					case "ServiceName":
 						continue // ServiceName is for systemd and does not affect Podman CLI
@@ -118,7 +118,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					case "Network":
 						cmd = append(cmd, "--network", q.ResolveRef(v))
 					default:
-						podmanArgs, err := util.QuadletOptionToPodman("pod", options, k, v)
+						podmanArgs, err := quadlet.QuadletOptionToPodman("pod", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -153,10 +153,10 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 			if quadctl.PodmanArgs != "" {
 				// If PodmanArgs were also provided via CLI, we will append them after the ones from the quadlet file.
 				// This allows CLI args to override quadlet args if there are conflicts, since in Podman CLI the last specified flag takes precedence.
-				configuredPodmanArgs = append(configuredPodmanArgs, util.ParseFields(quadctl.PodmanArgs)...)
+				configuredPodmanArgs = append(configuredPodmanArgs, quadlet.ParseFields(quadctl.PodmanArgs)...)
 			}
 			if quadctl.RunCmd != "" {
-				execCmd = util.ParseFields(quadctl.RunCmd)
+				execCmd = quadlet.ParseFields(quadctl.RunCmd)
 			}
 
 			cmd = append(cmd, configuredPodmanArgs...)
@@ -165,7 +165,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					warnings = append(warnings, fmt.Sprintf("no such quadlet container option: %s", k))
 					continue
 				}
-				vals := util.OptionValues(options, k, contSec[k])
+				vals := quadlet.OptionValues(options, k, contSec[k])
 
 				if k == "Exec" {
 					// Exec is not a Podman CLI option: it is the command appended after the
@@ -173,7 +173,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					// here - quoting survives, which is the whole point of keeping the value
 					// intact until now. A --exec flag on the CLI wins over the file.
 					if len(execCmd) < 1 {
-						execCmd = util.ParseFields(vals[0])
+						execCmd = quadlet.ParseFields(vals[0])
 					}
 					continue
 				}
@@ -199,7 +199,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 						cmd = append(cmd, "--pod", q.PodResourceName)
 					case "PodmanArgs": // Handled above
 					default:
-						podmanArgs, err := util.QuadletOptionToPodman("container", options, k, v)
+						podmanArgs, err := quadlet.QuadletOptionToPodman("container", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -223,7 +223,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 }
 
 // generateStartupCommand creates necessary 'start' commands based on existence.
-func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []string) {
+func generateStartupCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string, []string) {
 	cmd := []string{}
 	warnings := []string{}
 	resName := q.ID
@@ -241,7 +241,7 @@ func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []s
 		if kubeSec, ok := q.Sections["Kube"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(kubeSec)...)
 			for _, k := range slices.Sorted(maps.Keys(kubeSec)) {
-				for _, v := range util.OptionValues(options, k, kubeSec[k]) {
+				for _, v := range quadlet.OptionValues(options, k, kubeSec[k]) {
 					switch k {
 					case "Yaml":
 						continue // Yaml is parsed ahead of time and is appended at the end as the file argument for podman play kube
@@ -250,7 +250,7 @@ func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []s
 					case "PodmanArgs": // Handled above
 						continue
 					default:
-						podmanArgs, err := util.QuadletOptionToPodman("kube", options, k, v)
+						podmanArgs, err := quadlet.QuadletOptionToPodman("kube", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
@@ -290,7 +290,7 @@ func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []s
 }
 
 // generateStartupCommand creates necessary 'start' commands based on existence.
-func generateRunCommand(quadctl *util.State, q *util.Quadlet) ([]string, []string) {
+func generateRunCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string, []string) {
 
 	if q.Type == ".kube" {
 		// For kube type, just reuse the generateStartupCommand for kube types.
@@ -311,7 +311,7 @@ func generateRunCommand(quadctl *util.State, q *util.Quadlet) ([]string, []strin
 	return runCmd, warnings
 }
 
-func generateStopCommand(quadctl *util.State, q *util.Quadlet) []string {
+func generateStopCommand(quadctl *quadlet.State, q *quadlet.Quadlet) []string {
 	cmd := []string{}
 	resName := q.ID
 	if q.ResourceName != "" {
@@ -338,14 +338,14 @@ func generateStopCommand(quadctl *util.State, q *util.Quadlet) []string {
 
 // kubeDownForce reports whether a .kube quadlet sets KubeDownForce=true. The key is
 // optional, so the section and the value slice may both be absent.
-func kubeDownForce(q *util.Quadlet) bool {
-	return strings.EqualFold(util.LastValue(q.Sections["Kube"], "KubeDownForce"), "true")
+func kubeDownForce(q *quadlet.Quadlet) bool {
+	return strings.EqualFold(quadlet.LastValue(q.Sections["Kube"], "KubeDownForce"), "true")
 }
 
 // resolveVolumeRef rewrites the source half of a Volume= value - everything before the first
 // ":" - when it names a .volume quadlet, leaving the container path and options alone. A
 // source that is a host path or a pre-existing podman volume is passed through untouched.
-func resolveVolumeRef(q *util.Quadlet, val string) string {
+func resolveVolumeRef(q *quadlet.Quadlet, val string) string {
 	source, rest, hasRest := strings.Cut(val, ":")
 	resolved := q.ResolveRef(source)
 	if !hasRest {
@@ -360,7 +360,7 @@ func resolveVolumeRef(q *util.Quadlet, val string) string {
 func getRawPodmanArgs(section map[string][]string) []string {
 	var args []string
 	for _, argStr := range section["PodmanArgs"] {
-		args = append(args, util.ParseFields(argStr)...)
+		args = append(args, quadlet.ParseFields(argStr)...)
 	}
 	return args
 }

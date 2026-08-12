@@ -11,11 +11,11 @@ import (
 	"strings"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
-	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -224,7 +224,7 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 // installName is the name of the subdirectory under targetDir that belongs to this source
 // directory; searchDir is where the files that should be there are read from. The two differ
 // when a .quadlets bundle was extracted into a scratch directory.
-func pruneStaleSystemdFiles(quadctl *util.State, targetDir, installName, searchDir string) ([]Command, error) {
+func pruneStaleSystemdFiles(quadctl *quadlet.State, targetDir, installName, searchDir string) ([]Command, error) {
 	commands := []Command{}
 
 	if !quadctl.Config.UseSubdirectories {
@@ -270,9 +270,9 @@ func pruneStaleSystemdFiles(quadctl *util.State, targetDir, installName, searchD
 
 		// If the stale file is itself a quadlet definition, stop its service before
 		// deleting it so podman cleans up the resources it created.
-		if !e.IsDir() && util.IsQuadletExtension(filepath.Ext(name)) {
-			if stale, err := util.ParseQuadletFile(stalePath); err == nil {
-				stop, err := HandleSystemdStop(quadctl, []*util.Quadlet{stale}, true)
+		if !e.IsDir() && quadlet.IsQuadletExtension(filepath.Ext(name)) {
+			if stale, err := quadlet.ParseQuadletFile(stalePath); err == nil {
+				stop, err := HandleSystemdStop(quadctl, []*quadlet.Quadlet{stale}, true)
 				if err != nil {
 					return nil, err
 				}
@@ -375,7 +375,7 @@ func readFileLine(path string, n int) (string, error) {
 // it could not convert into a systemd unit. Without this, a bad quadlet option or reference
 // fails silently during daemon-reload, and the first sign of trouble is a confusing "unit not
 // found" (or similar) from the systemctl start that follows.
-func validateQuadletGenerationCommand(quadctl *util.State, quadlets []*util.Quadlet, targetDir string) Command {
+func validateQuadletGenerationCommand(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, targetDir string) Command {
 	c := NewCommand("Validating quadlet definitions")
 	// This is a quick, silent-on-success check; skip the spinner so a failure (which exits
 	// the process directly, matching how other fatal errors in this function are handled)
@@ -437,7 +437,7 @@ func validateQuadletGenerationCommand(quadctl *util.State, quadlets []*util.Quad
 	return c
 }
 
-func HandleSystemdRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 	var targetDir string
 	if quadctl.IsRootful {
 		targetDir = quadctl.Config.QuadletRootPath

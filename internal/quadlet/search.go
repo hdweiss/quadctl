@@ -1,20 +1,9 @@
-package util
+package quadlet
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-)
-
-// ErrUsage reports an invocation quadctl can't act on - no subcommand, one it doesn't know,
-// or a flag it doesn't accept. Usage has already been printed by the time it is returned, so
-// the caller should exit non-zero without printing anything further.
-var ErrUsage = errors.New("invalid invocation")
-
-// Consts and Config
-const (
-	ToolName = "quadctl"
 )
 
 // ResolveSearchDir turns the optional path argument into the absolute directory to search

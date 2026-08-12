@@ -3,11 +3,11 @@ package core
 import (
 	"strings"
 
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
 // Call handleCreate. Then start.
-func HandleStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 

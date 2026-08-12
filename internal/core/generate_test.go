@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/schema"
-	"github.com/fkmiec/quadctl/internal/util"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files with the current output")
@@ -30,13 +30,13 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 //
 // Regenerate with: go test ./internal/core/ -run TestGenerateCommandsGolden -update
 func TestGenerateCommandsGolden(t *testing.T) {
-	quadctl := &util.State{
+	quadctl := &quadlet.State{
 		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      "testdata/stack",
 	}
 
-	quadlets, err := util.InitQuadlets(quadctl)
+	quadlets, err := quadlet.InitQuadlets(quadctl)
 	if err != nil {
 		t.Fatalf("InitQuadlets: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestKubeDownForce(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := &util.Quadlet{ID: "app", Type: ".kube", Sections: tt.sections}
+			q := &quadlet.Quadlet{ID: "app", Type: ".kube", Sections: tt.sections}
 			if got := kubeDownForce(q); got != tt.want {
 				t.Errorf("kubeDownForce = %v, want %v", got, tt.want)
 			}
@@ -130,11 +130,11 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.IsRemoveVolumes = false
 	cfg.IsRemoveNetworks = false
-	quadctl := &util.State{
+	quadctl := &quadlet.State{
 		Runner: &runner.RecordingRunner{},
 		Config: cfg,
 	}
-	q := &util.Quadlet{
+	q := &quadlet.Quadlet{
 		ID:             "app",
 		Type:           ".kube",
 		Sections:       map[string]map[string][]string{"Kube": {"Yaml": {"app.yaml"}}},
@@ -146,7 +146,7 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 		t.Errorf("stop command = %q", got)
 	}
 
-	commands, err := HandleRemove(quadctl, []*util.Quadlet{q})
+	commands, err := HandleRemove(quadctl, []*quadlet.Quadlet{q})
 	if err != nil {
 		t.Fatalf("HandleRemove: %v", err)
 	}
@@ -158,12 +158,12 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 // TestGenerateRunCommandWithoutCreate covers the Phase 0.3 slice panic: generateRunCommand
 // used to do createCmd[3:] on whatever generateCreateCommand handed back, including nothing.
 func TestGenerateRunCommandWithoutCreate(t *testing.T) {
-	quadctl := &util.State{
+	quadctl := &quadlet.State{
 		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: schema.AllQuadletOptions(),
 	}
 	// A type generateCreateCommand doesn't handle, so it returns an empty slice.
-	q := &util.Quadlet{ID: "base", Type: ".image", Sections: map[string]map[string][]string{}}
+	q := &quadlet.Quadlet{ID: "base", Type: ".image", Sections: map[string]map[string][]string{}}
 
 	cmd, warnings := generateRunCommand(quadctl, q)
 	if len(cmd) != 0 {
@@ -177,11 +177,11 @@ func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 // TestGenerateStartupCommandKubeIsClean covers Phase 0.6: the generator used to print a
 // half-built command to stdout on every .kube start.
 func TestGenerateStartupCommandKubeIsClean(t *testing.T) {
-	quadctl := &util.State{
+	quadctl := &quadlet.State{
 		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: schema.AllQuadletOptions(),
 	}
-	q := &util.Quadlet{
+	q := &quadlet.Quadlet{
 		ID:             "app",
 		Type:           ".kube",
 		Sections:       map[string]map[string][]string{"Kube": {"Yaml": {"app.yaml"}}},
@@ -206,12 +206,12 @@ func TestExecBecomesArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	quadctl := &util.State{
+	quadctl := &quadlet.State{
 		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      dir,
 	}
-	quadlets, err := util.InitQuadlets(quadctl)
+	quadlets, err := quadlet.InitQuadlets(quadctl)
 	if err != nil {
 		t.Fatalf("InitQuadlets: %v", err)
 	}
@@ -243,12 +243,12 @@ func TestPodmanArgsSplitOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	quadctl := &util.State{
+	quadctl := &quadlet.State{
 		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      dir,
 	}
-	quadlets, err := util.InitQuadlets(quadctl)
+	quadlets, err := quadlet.InitQuadlets(quadctl)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fkmiec/quadctl/internal/util"
-
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
+	"github.com/fkmiec/quadctl/internal/tui"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandlePS(quadctl *util.State, quadlets []*util.Quadlet) error {
+func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
@@ -53,7 +53,7 @@ func HandlePS(quadctl *util.State, quadlets []*util.Quadlet) error {
 	return nil
 }
 
-func HandleStats(quadctl *util.State, quadlets []*util.Quadlet) error {
+func HandleStats(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
@@ -78,7 +78,7 @@ func HandleStats(quadctl *util.State, quadlets []*util.Quadlet) error {
 	return runner.RunStreaming(quadctl.Runner, cmd)
 }
 
-func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
+func HandleImages(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 	r := quadctl.Runner
 
 	//REPOSITORY                                 TAG         IMAGE ID      CREATED       SIZE
@@ -125,7 +125,7 @@ func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
 		for _, q := range quadlets {
 			// Images only pertain to containers
 			if q.Type == ".container" {
-				name := strings.TrimSpace(util.LastValue(q.Sections["Container"], "Image"))
+				name := strings.TrimSpace(quadlet.LastValue(q.Sections["Container"], "Image"))
 				if name == "" {
 					continue
 				}
@@ -197,7 +197,7 @@ func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
 	return nil
 }
 
-func HandleLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	var commands []Command
 
@@ -225,7 +225,7 @@ func HandleLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error
 		for _, info := range psInfo {
 			names = append(names, strings.TrimSpace(info[1]))
 		}
-		selected, err := util.SelectFromList(names)
+		selected, err := tui.SelectFromList(names)
 		if err != nil {
 			return nil, fmt.Errorf("selecting container: %w", err)
 		}

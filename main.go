@@ -11,9 +11,10 @@ import (
 
 	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/core"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/schema"
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/tui"
 )
 
 // defaultListDepth is the depth 'list' walks when -d is not given: enough to show the
@@ -21,7 +22,7 @@ import (
 const defaultListDepth = 2
 
 var (
-	quadctl *util.State
+	quadctl *quadlet.State
 )
 
 func main() {
@@ -66,7 +67,7 @@ func run() int {
 	}
 	quadctl.QuadletSchemas = schema.AllQuadletOptions()
 
-	quadlets, err := util.InitQuadlets(quadctl)
+	quadlets, err := quadlet.InitQuadlets(quadctl)
 	if err != nil {
 		return fail(err)
 	}
@@ -80,7 +81,7 @@ func run() int {
 		if err := displayQuadletSelector(quadctl); err != nil {
 			return fail(fmt.Errorf("no quadlets in %s, and no other directory to offer: %w", quadctl.SearchDir, err))
 		}
-		if quadlets, err = util.InitQuadlets(quadctl); err != nil {
+		if quadlets, err = quadlet.InitQuadlets(quadctl); err != nil {
 			return fail(err)
 		}
 	}
@@ -99,7 +100,7 @@ func run() int {
 		} else {
 			fmt.Fprintf(os.Stderr, "Using all quadlets under %s.\n", quadctl.Config.QuadletSrcPath)
 		}
-		if quadlets, err = util.InitAllQuadlets(quadctl); err != nil {
+		if quadlets, err = quadlet.InitAllQuadlets(quadctl); err != nil {
 			return fail(err)
 		}
 	}
@@ -130,7 +131,7 @@ func run() int {
 // handleInterrupts tears down cleanly on Ctrl-C. It lives in main because it has to exit, and
 // main is the only place allowed to: the spinner has to stop before anything else prints, and
 // the scratch directories have to go, neither of which a default signal disposition would do.
-func handleInterrupts(quadctl *util.State) {
+func handleInterrupts(quadctl *quadlet.State) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -147,7 +148,7 @@ func handleInterrupts(quadctl *util.State) {
 // letting whichever code path happens to run first surface
 // `exec: "podman": executable file not found in $PATH` (TODO.md section 4). Print mode runs
 // nothing, so it needs neither binary.
-func checkRequiredBinaries(quadctl *util.State) error {
+func checkRequiredBinaries(quadctl *quadlet.State) error {
 	if quadctl.IsPrintOnly {
 		return nil
 	}
@@ -167,7 +168,7 @@ func checkRequiredBinaries(quadctl *util.State) error {
 // the flags - it may name the search directory a flag argument refers to - so systemd.enabled
 // is applied here rather than at parse time, and --no-systemd is what makes it overridable
 // from the command line (TODO.md section 3).
-func resolveSystemdMode(quadctl *util.State, cfg *config.Config) error {
+func resolveSystemdMode(quadctl *quadlet.State, cfg *config.Config) error {
 	if quadctl.IsSystemd && quadctl.IsNoSystemd {
 		return fmt.Errorf("-s/--systemd and --no-systemd contradict each other; pass one or neither")
 	}
@@ -180,23 +181,23 @@ func resolveSystemdMode(quadctl *util.State, cfg *config.Config) error {
 	return nil
 }
 
-// fail reports err and yields the exit code for it. util.ErrUsage means usage has already
+// fail reports err and yields the exit code for it. errUsage means usage has already
 // been printed, so it gets no second message; errHelp means the user asked for it.
 func fail(err error) int {
 	if errors.Is(err, errHelp) {
 		return 0
 	}
-	if !errors.Is(err, util.ErrUsage) {
+	if !errors.Is(err, errUsage) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	}
 	return 1
 }
 
 // initState builds the run state. Everything the user configured comes later, from
-// util.LoadConfig - what is set here is either derived from the process itself or a default
+// config.LoadConfig - what is set here is either derived from the process itself or a default
 // the flags may still override.
 func initState() {
-	quadctl = &util.State{
+	quadctl = &quadlet.State{
 		Config:         config.DefaultConfig(),
 		QuadletSchemas: map[string]map[string]schema.SchemaOption{},
 		Runner:         runner.ExecRunner{},
@@ -207,7 +208,7 @@ func initState() {
 	}
 }
 
-func displayQuadletSelector(quadctl *util.State) error {
+func displayQuadletSelector(quadctl *quadlet.State) error {
 	quadletDirs, err := config.ListSubdirectories(quadctl.Config.QuadletSrcPath)
 	if err != nil {
 		return err
@@ -216,7 +217,7 @@ func displayQuadletSelector(quadctl *util.State) error {
 	if len(quadletDirs) == 0 {
 		return fmt.Errorf("no quadlet directories found in %s", quadctl.Config.QuadletSrcPath)
 	}
-	selected, err := util.SelectFromList(quadletDirs)
+	selected, err := tui.SelectFromList(quadletDirs)
 	if err != nil {
 		return err
 	}

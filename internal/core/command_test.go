@@ -7,15 +7,15 @@ import (
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
-	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // newTestQuadctl returns a run state wired to a RecordingRunner, so nothing in a test
 // reaches podman, systemctl or the host at all.
-func newTestQuadctl(sub string) (*util.State, *runner.RecordingRunner) {
+func newTestQuadctl(sub string) (*quadlet.State, *runner.RecordingRunner) {
 	rec := &runner.RecordingRunner{}
-	return &util.State{
+	return &quadlet.State{
 		Subcommand: sub,
 		Runner:     rec,
 		IsRootful:  true,
@@ -23,8 +23,8 @@ func newTestQuadctl(sub string) (*util.State, *runner.RecordingRunner) {
 	}, rec
 }
 
-func container(id, name string) *util.Quadlet {
-	return &util.Quadlet{
+func container(id, name string) *quadlet.Quadlet {
+	return &quadlet.Quadlet{
 		ID:           id,
 		Type:         ".container",
 		Filepath:     id + ".container",
@@ -37,7 +37,7 @@ func container(id, name string) *util.Quadlet {
 // without podman installed.
 func TestHandleStopArgv(t *testing.T) {
 	quadctl, rec := newTestQuadctl("stop")
-	quadlets := []*util.Quadlet{container("web", "web"), container("db", "db")}
+	quadlets := []*quadlet.Quadlet{container("web", "web"), container("db", "db")}
 
 	cmds, err := HandleStop(quadctl, quadlets)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestHandleStopArgv(t *testing.T) {
 
 func TestHandleRemoveArgv(t *testing.T) {
 	quadctl, rec := newTestQuadctl("remove")
-	quadlets := []*util.Quadlet{container("web", "web")}
+	quadlets := []*quadlet.Quadlet{container("web", "web")}
 
 	cmds, err := HandleRemove(quadctl, quadlets)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestRunCommandsPrintOnlyRunsNothing(t *testing.T) {
 	quadctl, rec := newTestQuadctl("stop")
 	quadctl.IsPrintOnly = true
 
-	cmds, err := HandleStop(quadctl, []*util.Quadlet{container("web", "web")})
+	cmds, err := HandleStop(quadctl, []*quadlet.Quadlet{container("web", "web")})
 	if err != nil {
 		t.Fatalf("HandleStop: %v", err)
 	}

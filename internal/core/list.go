@@ -7,12 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/fkmiec/quadctl/internal/util"
-
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/jedib0t/go-pretty/v6/list"
 )
 
-func HandleList(quadctl *util.State) error {
+func HandleList(quadctl *quadlet.State) error {
 
 	if !quadctl.IsListAll {
 		absPath := quadctl.Config.QuadletSrcPath

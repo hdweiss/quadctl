@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/config"
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
-func testRegistry(t *testing.T) (*registry, *util.State) {
+func testRegistry(t *testing.T) (*registry, *quadlet.State) {
 	t.Helper()
-	quadctl := &util.State{ListDepth: defaultListDepth}
+	quadctl := &quadlet.State{ListDepth: defaultListDepth}
 	r := newRegistry(quadctl)
 	// Usage goes to stderr; tests that provoke it only care that parsing failed.
 	r.global.SetOutput(io.Discard)
@@ -117,7 +117,7 @@ func TestResolveSystemdMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			quadctl := &util.State{IsSystemd: tt.systemd, IsNoSystemd: tt.noSystemd}
+			quadctl := &quadlet.State{IsSystemd: tt.systemd, IsNoSystemd: tt.noSystemd}
 			cfg := config.DefaultConfig()
 			cfg.SystemdEnabled = tt.configured
 

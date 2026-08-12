@@ -3,17 +3,17 @@ package core
 import (
 	"fmt"
 
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
-func HandlePull(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandlePull(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
 	images := []string{}
 	for _, q := range quadlets {
 		if q.Type == ".container" {
-			if img := util.LastValue(q.Sections["Container"], "Image"); img != "" {
+			if img := quadlet.LastValue(q.Sections["Container"], "Image"); img != "" {
 				images = append(images, img)
 			}
 		} else if q.Type == ".kube" {

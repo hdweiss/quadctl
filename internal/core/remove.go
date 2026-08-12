@@ -1,10 +1,10 @@
 package core
 
 import (
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
-func HandleRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 

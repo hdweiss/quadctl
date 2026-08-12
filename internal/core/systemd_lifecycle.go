@@ -6,13 +6,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fkmiec/quadctl/internal/util"
-
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
+	"github.com/fkmiec/quadctl/internal/tui"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandleSystemdStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -47,7 +47,7 @@ func HandleSystemdStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Comman
 	// Only start the pod and any loose containers
 	for _, q := range quadlets {
 		if (q.Type == ".container" && q.ParentPod == "") || q.Type == ".pod" || q.Type == ".kube" {
-			args := util.ParseFields(buf.String())
+			args := quadlet.ParseFields(buf.String())
 			args = append(args, q.ServiceName)
 			cmd := NewCommand(unitLabel("Starting", q))
 			cmd.Cmd = args
@@ -59,7 +59,7 @@ func HandleSystemdStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Comman
 	return commands, nil
 }
 
-func HandleSystemdStop(quadctl *util.State, quadlets []*util.Quadlet, stopNetAndVol bool) ([]Command, error) {
+func HandleSystemdStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, stopNetAndVol bool) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -75,12 +75,12 @@ func HandleSystemdStop(quadctl *util.State, quadlets []*util.Quadlet, stopNetAnd
 		// Stop a container directly only if it is not part of a pod.
 		if (q.Type == ".container" && q.ParentPod == "") || q.Type == ".pod" || q.Type == ".kube" {
 			// Stop the pod and any related containers.
-			args = util.ParseFields(buf.String())
+			args = quadlet.ParseFields(buf.String())
 			args = append(args, q.ServiceName)
 		} else {
 			// Stop network and volume services (Only used when called by handleUninstall. Ensures cleanup of volumes and networks).
 			if stopNetAndVol && (q.Type == ".network" || q.Type == ".volume") {
-				args = util.ParseFields(buf.String())
+				args = quadlet.ParseFields(buf.String())
 				args = append(args, q.ServiceName)
 			}
 		}
@@ -94,7 +94,7 @@ func HandleSystemdStop(quadctl *util.State, quadlets []*util.Quadlet, stopNetAnd
 	return commands, nil
 }
 
-func HandleSystemdStatus(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	if quadctl.IsLongStatus {
 		commands := []Command{}
@@ -104,7 +104,7 @@ func HandleSystemdStatus(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 		if err := quadctl.Config.SystemdStatusTmpl.Execute(&buf, data); err != nil {
 			return nil, fmt.Errorf("executing systemd status template: %w", err)
 		}
-		args := util.ParseFields(buf.String())
+		args := quadlet.ParseFields(buf.String())
 		for _, q := range quadlets {
 			args = append(args, q.ServiceName)
 		}
@@ -124,12 +124,12 @@ func HandleSystemdStatus(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 	}
 }
 
-func HandleSystemdLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleSystemdLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
 	// Only .container and .kube quadlets run a process whose logs are worth tailing.
-	var serviceQuadlets []*util.Quadlet
+	var serviceQuadlets []*quadlet.Quadlet
 	for _, q := range quadlets {
 		if q.Type == ".container" || q.Type == ".kube" {
 			serviceQuadlets = append(serviceQuadlets, q)
@@ -144,7 +144,7 @@ func HandleSystemdLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command
 		for _, q := range serviceQuadlets {
 			names = append(names, q.ServiceName)
 		}
-		selected, err := util.SelectFromList(names)
+		selected, err := tui.SelectFromList(names)
 		if err != nil {
 			return nil, fmt.Errorf("selecting service: %w", err)
 		}
@@ -157,7 +157,7 @@ func HandleSystemdLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command
 		return nil, fmt.Errorf("executing systemd logs template: %w", err)
 	}
 
-	cmd := util.ParseFields(buf.String())
+	cmd := quadlet.ParseFields(buf.String())
 	if serviceName != "" {
 		cmd = append(cmd, "-u", serviceName)
 	}
@@ -171,13 +171,13 @@ func HandleSystemdLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command
 	return commands, nil
 }
 
-func HandleSystemdReload(quadctl *util.State) ([]Command, error) {
+func HandleSystemdReload(quadctl *quadlet.State) ([]Command, error) {
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
 	if err := quadctl.Config.SystemdReloadTmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("executing systemd reload template: %w", err)
 	}
-	command := util.ParseFields(buf.String())
+	command := quadlet.ParseFields(buf.String())
 	cmd := NewCommand("Reloading systemd")
 	cmd.Cmd = command
 	return []Command{cmd}, nil
@@ -186,7 +186,7 @@ func HandleSystemdReload(quadctl *util.State) ([]Command, error) {
 // systemdTemplateData builds the data passed to the configurable systemd command templates.
 // The "user" key is always present, empty when rootful: text/template renders a missing map
 // key as the literal "<no value>".
-func systemdTemplateData(quadctl *util.State) map[string]string {
+func systemdTemplateData(quadctl *quadlet.State) map[string]string {
 	user := ""
 	if !quadctl.IsRootful {
 		user = "--user"
@@ -194,7 +194,7 @@ func systemdTemplateData(quadctl *util.State) map[string]string {
 	return map[string]string{"user": user}
 }
 
-func displayListOfSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util.Quadlet) error {
+func displayListOfSystemdInstalledQuadlets(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 	info, err := listSystemdInstalledQuadlets(quadctl, quadlets)
 	if err != nil {
 		return err

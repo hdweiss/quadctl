@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
 // Call handleCreate. Then start.
-func HandleRun(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleRun(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	//Check how many .container quadlets there are and how many with --detach or -d podman args.
 	//If more than one .container and more than one of them don't have --detach or -d,
 	//print a warning and exit.
 	nonDetachedContainers := 0
-	var foregroundQuadlet *util.Quadlet
+	var foregroundQuadlet *quadlet.Quadlet
 	var foregroundQuadletCommand Command
 	for _, q := range quadlets {
 		if q.Type == ".container" {

@@ -1,10 +1,10 @@
 package core
 
 import (
-	"github.com/fkmiec/quadctl/internal/util"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 )
 
-func HandleStop(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error) {
+func HandleStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
-	"github.com/fkmiec/quadctl/internal/util"
 )
 
 type Command struct {
@@ -169,7 +169,7 @@ func exitCodeFor(err error) int {
 // redraws its own line, so anything interleaved with one is liable to be overwritten, and a
 // problem worth knowing about is worth knowing before the first command runs. Each line names
 // the command it came from instead, which is what the ordering was standing in for.
-func printWarnings(quadctl *util.State, commands []Command) {
+func printWarnings(quadctl *quadlet.State, commands []Command) {
 	printed := false
 	for _, c := range commands {
 		for _, w := range c.Warnings {
@@ -198,7 +198,7 @@ func printWarnings(quadctl *util.State, commands []Command) {
 // Common handling for dry run / verbose output and command execution for all handlers that
 // generate commands. Returns the exit code quadctl should terminate with: 0 when every
 // command succeeded, otherwise the status of the last command that failed.
-func RunCommands(quadctl *util.State, commands []Command) int {
+func RunCommands(quadctl *quadlet.State, commands []Command) int {
 
 	exitCode := 0
 
@@ -304,7 +304,7 @@ func stripSystemdJobFailureHint(output string) string {
 // diagnoseFailedSystemctlCommand builds troubleshooting context for a failed 'systemctl start/stop/restart'
 // invocation by fetching the unit's status and its most recent journal entries directly, rather than
 // leaving the user to run "systemctl status" / "journalctl" themselves as systemctl's own error suggests.
-func diagnoseFailedSystemctlCommand(quadctl *util.State, cmd []string) string {
+func diagnoseFailedSystemctlCommand(quadctl *quadlet.State, cmd []string) string {
 	if !isSystemctlLifecycleCommand(cmd) {
 		return ""
 	}

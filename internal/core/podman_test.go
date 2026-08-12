@@ -4,20 +4,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fkmiec/quadctl/internal/quadlet"
 	"github.com/fkmiec/quadctl/internal/runner"
-	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // TestQuadletOwnsContainer covers TODO.md section 2's suffix matching: `podman ps` output was
 // attributed to a quadlet whenever the container's name merely ended with the quadlet's, so
 // the quadlet `web` claimed an unrelated container called `myweb`.
 func TestQuadletOwnsContainer(t *testing.T) {
-	web := &util.Quadlet{ID: "web", Type: ".container", ResourceName: "systemd-web"}
-	inPod := &util.Quadlet{
+	web := &quadlet.Quadlet{ID: "web", Type: ".container", ResourceName: "systemd-web"}
+	inPod := &quadlet.Quadlet{
 		ID: "app", Type: ".container",
 		ResourceName: "web-app", ParentPod: "stack", PodResourceName: "stack-pod",
 	}
-	kube := &util.Quadlet{
+	kube := &quadlet.Quadlet{
 		ID: "site", Type: ".kube",
 		KubeResources: []map[string]interface{}{
 			{"type": "pod", "name": "site-pod"},
@@ -25,11 +25,11 @@ func TestQuadletOwnsContainer(t *testing.T) {
 		},
 	}
 	// A .volume describes nothing that shows up in `podman ps`.
-	vol := &util.Quadlet{ID: "data", Type: ".volume", ResourceName: "systemd-data"}
+	vol := &quadlet.Quadlet{ID: "data", Type: ".volume", ResourceName: "systemd-data"}
 
 	tests := []struct {
 		name      string
-		q         *util.Quadlet
+		q         *quadlet.Quadlet
 		container string
 		pod       string
 		want      bool
@@ -69,7 +69,7 @@ func TestGetContainerPSFiltersExactly(t *testing.T) {
 		}, "\n")},
 	}
 
-	quadlets := []*util.Quadlet{{ID: "web", Type: ".container", ResourceName: "systemd-web"}}
+	quadlets := []*quadlet.Quadlet{{ID: "web", Type: ".container", ResourceName: "systemd-web"}}
 	info, err := getContainerPS(runner, quadlets)
 	if err != nil {
 		t.Fatalf("getContainerPS: %v", err)
