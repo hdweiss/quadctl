@@ -36,8 +36,9 @@ func HandlePull(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 			}
 		} else if q.Type == ".kube" {
 			for _, res := range q.KubeResources {
-				if res["type"] == "container" {
-					images = append(images, res["image"].(string))
+				// A container in the k8s YAML may carry no image: key at all.
+				if img, ok := res["image"].(string); ok && res["type"] == "container" {
+					images = append(images, img)
 				}
 			}
 		}

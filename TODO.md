@@ -92,6 +92,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
     an empty slice (missing schema, unhandled type).
   - `core/handlers.go:1143` / `:1778` — `res["image"].(string)` / `res["name"].(string)`
     type-assert without the `, ok` form; a k8s container without `image:` panics.
+    (A sixth site, `HandlePull`, has the same bug — found while fixing the others.)
 
 ## 2. Functional bugs
 
