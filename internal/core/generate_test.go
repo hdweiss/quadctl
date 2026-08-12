@@ -18,10 +18,12 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 // is the change-detector for the command generators: PLAN.md 3.1 rewrites the value model
 // underneath them, and this is what makes any difference in the resulting argv visible.
 //
-// The golden file records today's output, defects included - the duplicated --name is
-// TODO.md section 2, still open. Fixing those should show up here as a deliberate diff.
-// shell.container is there for the value model specifically: a command line kept whole, a
-// quoted value with a space, a repeated key, a whitespace list, and a continuation.
+// The golden file records today's output, defects included, so fixing one shows up here as a
+// deliberate diff. shell.container is there for the value model specifically: a command line
+// kept whole, a quoted value with a space, a repeated key, a whitespace list, and a
+// continuation. The stack also pins the naming rule from PLAN.md Phase 4 - explicit names
+// (web-app, data), defaulted ones (systemd-shell, systemd-cache), references resolving to
+// them, and a bind mount passing through untouched.
 //
 // Regenerate with: go test ./internal/core/ -run TestGenerateCommandsGolden -update
 func TestGenerateCommandsGolden(t *testing.T) {
@@ -134,7 +136,6 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 		Type:           ".kube",
 		Sections:       map[string]map[string][]string{"Kube": {"Yaml": {"app.yaml"}}},
 		KubernetesYaml: "/tmp/app.yaml",
-		GeneratedNames: map[string]string{},
 	}
 
 	stop := generateStopCommand(quadctl, q)
@@ -159,7 +160,7 @@ func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 		QuadletSchemas: util.GetQuadletSchemas(),
 	}
 	// A type generateCreateCommand doesn't handle, so it returns an empty slice.
-	q := &util.Quadlet{ID: "base", Type: ".image", Sections: map[string]map[string][]string{}, GeneratedNames: map[string]string{}}
+	q := &util.Quadlet{ID: "base", Type: ".image", Sections: map[string]map[string][]string{}}
 
 	cmd, warnings := generateRunCommand(quadctl, q)
 	if len(cmd) != 0 {
@@ -182,7 +183,6 @@ func TestGenerateStartupCommandKubeIsClean(t *testing.T) {
 		Type:           ".kube",
 		Sections:       map[string]map[string][]string{"Kube": {"Yaml": {"app.yaml"}}},
 		KubernetesYaml: "/tmp/app.yaml",
-		GeneratedNames: map[string]string{},
 	}
 
 	cmd, _ := generateStartupCommand(quadctl, q)
@@ -214,7 +214,7 @@ func TestExecBecomesArgv(t *testing.T) {
 	}
 
 	create, warnings := generateCreateCommand(quadctl, quadlets[0])
-	want := []string{"podman", "container", "create", "--name", "app", "alpine", "/bin/sh", "-c", "echo hi"}
+	want := []string{"podman", "container", "create", "--name", "systemd-app", "alpine", "/bin/sh", "-c", "echo hi"}
 	if !slices.Equal(create, want) {
 		t.Errorf("create argv =\n  %#v\nwant\n  %#v", create, want)
 	}
@@ -251,7 +251,7 @@ func TestPodmanArgsSplitOnce(t *testing.T) {
 	}
 
 	create, _ := generateCreateCommand(quadctl, quadlets[0])
-	want := []string{"podman", "container", "create", "--name", "app", "--rm", "--label", "owner=the platform team", "alpine"}
+	want := []string{"podman", "container", "create", "--name", "systemd-app", "--rm", "--label", "owner=the platform team", "alpine"}
 	if !slices.Equal(create, want) {
 		t.Errorf("create argv =\n  %#v\nwant\n  %#v", create, want)
 	}

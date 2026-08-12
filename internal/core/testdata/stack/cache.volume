@@ -1,0 +1,3 @@
+# No VolumeName=, so this one carries quadlet's default name: systemd-cache.
+[Volume]
+Driver=local

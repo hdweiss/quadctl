@@ -100,6 +100,19 @@ Requirements:
 
 ```
 
+## Resource naming
+
+quadctl gives podman resources the same names systemd's quadlet generator would, whether or not `-s` is used. For a quadlet file `<name>.<type>`:
+
+| The file sets | The podman resource is called |
+|---|---|
+| `ContainerName=`, `PodName=`, `VolumeName=` or `NetworkName=` | that value |
+| nothing | `systemd-<name>` |
+
+So `web.container` becomes the container `systemd-web`, and `web.container` with `ContainerName=frontend` becomes `frontend`. References between quadlets follow the same rule: a container whose `Volume=data.volume:/srv` mounts the volume that `data.volume` created, under whichever of the two names above applies. A value that doesn't name a quadlet — a bind mount like `/srv/html:/usr/share/nginx/html`, or `Network=host` — is passed to podman as written.
+
+This is why `quadctl start` and `quadctl -s start` address the same containers, volumes and networks, and why `quadctl -s rm` cleans up volumes that a plain `quadctl create` made. It also means the resource names are *not* the file names: use `quadctl ps` to see them.
+
 ## Systemd-style INI files vs YAML
 
 Systemd is a bit mysterious and intimidating to a lot of folks. Reliably orchestrating a web of inter-dependent services is a complex task (cf. Kubernetes), so some complexity is to be expected, but because of that complexity, a lot of folks have a knee-jerk reaction to writing Quadlet files (ie. systemd-style) files and point to how easy and popular YAML is with tools like Compose and Kubernetes. But Quadlet files are just INI files ... simple key-value in sections. Yes, there can be bits in there that are for systemd, but likely just boilerplate Service and Install sections consisting of one parameter each to tell systemd about your restart and start on boot policies. Here's a Compose file for Jellyfin and then an equivalent .container quadlet. 

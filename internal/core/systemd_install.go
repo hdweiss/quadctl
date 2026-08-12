@@ -528,35 +528,21 @@ func HandleSystemdRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 
 		//Expressly remove volume and network resources that might be left behind
 		for _, q := range quadlets {
+			// q.ResourceName is the name the generator gave the resource, so this now removes
+			// what a plain 'quadctl create' would have made too - the two paths agree on the
+			// name (PLAN.md Phase 4).
+			name := q.ResourceName
 			if q.Type == ".volume" && quadctl.Config.IsRemoveVolumes {
-				c.Output = append(c.Output, fmt.Sprintf("Removing volume %s", q.ID))
-				var fn func()
-				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
-				if volName := util.LastValue(q.Sections["Volume"], "VolumeName"); volName != "" {
-					fn = func() {
-						_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", volName})
-					}
-				} else {
-					fn = func() {
-						_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", "systemd-" + q.ID})
-					}
-				}
-				funcs = append(funcs, fn)
+				c.Output = append(c.Output, fmt.Sprintf("Removing volume %s", name))
+				funcs = append(funcs, func() {
+					_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", name})
+				})
 			}
 			if q.Type == ".network" && quadctl.Config.IsRemoveNetworks {
-				c.Output = append(c.Output, fmt.Sprintf("Removing network %s", q.ID))
-				var fn func()
-				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
-				if networkName := util.LastValue(q.Sections["Network"], "NetworkName"); networkName != "" {
-					fn = func() {
-						_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", networkName})
-					}
-				} else {
-					fn = func() {
-						_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", "systemd-" + q.ID})
-					}
-				}
-				funcs = append(funcs, fn)
+				c.Output = append(c.Output, fmt.Sprintf("Removing network %s", name))
+				funcs = append(funcs, func() {
+					_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", name})
+				})
 			}
 		}
 	}

@@ -13,16 +13,10 @@ func HandleRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 	// Reverse order for safe removal
 	for i := len(quadlets) - 1; i >= 0; i-- {
 		q := quadlets[i]
-		resType := q.Type
-		resName := q.ID
-		if q.Type == ".container" {
-			resName = q.GeneratedNames["container"]
-		} else if q.Type == ".pod" {
-			resName = q.GeneratedNames["pod_name"]
-		}
+		resName := q.DisplayName()
 
 		rmCmd := []string{"podman"}
-		switch resType {
+		switch q.Type {
 		case ".kube":
 			if quadctl.Config.IsRemoveVolumes || quadctl.Config.IsRemoveNetworks || kubeDownForce(q) {
 				rmCmd = append(rmCmd, "play", "kube", "--down", "--force", q.KubernetesYaml)
@@ -39,7 +33,7 @@ func HandleRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 			rmCmd = append(rmCmd, "volume", "rm", resName)
 		}
 
-		c := NewCommand(fmt.Sprintf("Removing %s %s", resType, resName))
+		c := NewCommand(fmt.Sprintf("Removing %s %s", q.Type, resName))
 		c.Cmd = rmCmd
 		commands = append(commands, c)
 	}

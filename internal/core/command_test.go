@@ -23,11 +23,11 @@ func newTestQuadctl(sub string) (*util.State, *util.RecordingRunner) {
 
 func container(id, name string) *util.Quadlet {
 	return &util.Quadlet{
-		ID:             id,
-		Type:           ".container",
-		Filepath:       id + ".container",
-		Sections:       map[string]map[string][]string{"Container": {"Image": {"docker.io/library/alpine:latest"}}},
-		GeneratedNames: map[string]string{"container": name},
+		ID:           id,
+		Type:         ".container",
+		Filepath:     id + ".container",
+		Sections:     map[string]map[string][]string{"Container": {"Image": {"docker.io/library/alpine:latest"}}},
+		ResourceName: name,
 	}
 }
 

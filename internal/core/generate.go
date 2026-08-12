@@ -41,8 +41,9 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					case "ServiceName":
 						continue // ServiceName is for systemd and does not affect Podman CLI
 					case "VolumeName":
-						//cmd = append(cmd, "--name", v) // Not sure this is valid. May need to hold the value and append at the end after processing all options to avoid ordering issues with Podman CLI
-						// The volume name is specified by the ID and added at the end of the command
+						// Folded into q.ResourceName and appended as the positional name
+						// argument below, since 'podman volume create' takes the name last
+						// rather than as a flag.
 						continue
 					case "PodmanArgs": // Handled above
 						continue
@@ -57,7 +58,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 				}
 			}
 		}
-		cmd = append(cmd, q.ID)
+		cmd = append(cmd, q.ResourceName)
 
 	case ".network":
 		//Get the schema for the network type and use the PodmanTemplateParsed to format the podman option.
@@ -73,7 +74,9 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 				for _, v := range util.OptionValues(options, k, netSec[k]) {
 					switch k {
 					case "NetworkName":
-						continue // NetworkName is for systemd and does not affect Podman CLI
+						// Folded into q.ResourceName and appended as the positional name
+						// argument below.
+						continue
 					case "ServiceName":
 						continue // ServiceName is for systemd and does not affect Podman CLI
 					case "NetworkDeleteOnStop":
@@ -90,7 +93,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 				}
 			}
 		}
-		cmd = append(cmd, q.ID)
+		cmd = append(cmd, q.ResourceName)
 
 	case ".pod":
 		//Get the schema
@@ -100,11 +103,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 			return cmd, warnings
 		}
 
-		podName := q.ID
-		if name, ok := q.GeneratedNames["pod_name"]; ok {
-			podName = name
-		}
-		cmd = append(cmd, "podman", "pod", "create", "--name", podName)
+		cmd = append(cmd, "podman", "pod", "create", "--name", q.ResourceName)
 		if podSec, ok := q.Sections["Pod"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(podSec)...)
 			for _, k := range slices.Sorted(maps.Keys(podSec)) {
@@ -113,7 +112,11 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					case "ServiceName":
 						continue // ServiceName is for systemd and does not affect Podman CLI
 					case "PodmanArgs": // Handled above
-					case "PodName": // Handled above
+					case "PodName": // Handled above, as --name
+					case "Volume":
+						cmd = append(cmd, "--volume", resolveVolumeRef(q, v))
+					case "Network":
+						cmd = append(cmd, "--network", q.ResolveRef(v))
 					default:
 						podmanArgs, err := util.QuadletOptionToPodman("pod", options, k, v)
 						if err != nil {
@@ -134,18 +137,12 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 			return cmd, warnings
 		}
 
-		resName := q.GeneratedNames["container"]
-		cmd = append(cmd, "podman", "container", "create", "--name", resName)
+		cmd = append(cmd, "podman", "container", "create", "--name", q.ResourceName)
 
 		// Map [Service] Restart= to --restart
 		if q.RestartPolicy != "" {
 			cmd = append(cmd, "--restart", q.RestartPolicy)
 		}
-
-		// Map [Container] AutoUpdate= to label
-		//if q.GeneratedNames["auto_update"] != "" {
-		//	cmd = append(cmd, "--label", "io.containers.autoupdate="+q.GeneratedNames["auto_update"])
-		//}
 
 		var image string
 		var execCmd []string
@@ -185,6 +182,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					switch k {
 					case "Image":
 						image = v
+					case "ContainerName": // Handled above, as --name
 					case "ReloadCmd":
 						continue // ReloadCmd is for systemd and does not affect Podman CLI
 					case "ReloadSignal":
@@ -194,21 +192,13 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 					case "StartWithPod":
 						continue // StartWithPod is for systemd and does not affect Podman CLI
 					case "Volume":
-						volSource := strings.Split(v, ":")[0]
-						cleanVol := strings.TrimSuffix(volSource, ".volume")
-						mapped := strings.Replace(v, volSource, cleanVol, 1)
-						cmd = append(cmd, "-v", mapped)
+						cmd = append(cmd, "-v", resolveVolumeRef(q, v))
 					case "Network":
-						cmd = append(cmd, "--network", strings.TrimSuffix(v, ".network"))
+						cmd = append(cmd, "--network", q.ResolveRef(v))
+					case "Pod":
+						cmd = append(cmd, "--pod", q.PodResourceName)
 					case "PodmanArgs": // Handled above
 					default:
-						if k == "Pod" {
-							v = strings.TrimSuffix(v, ".pod")
-							if podName, ok := q.GeneratedNames["pod_name"]; ok {
-								v = podName
-							}
-						}
-
 						podmanArgs, err := util.QuadletOptionToPodman("container", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
@@ -275,10 +265,8 @@ func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []s
 	}
 
 	// Other startable types are pod and container
-	if q.Type == ".container" {
-		resName = q.GeneratedNames["container"]
-	} else if q.Type == ".pod" {
-		resName = q.GeneratedNames["pod_name"]
+	if q.ResourceName != "" {
+		resName = q.ResourceName
 	}
 
 	// 3. Determine if we should start it
@@ -326,10 +314,8 @@ func generateRunCommand(quadctl *util.State, q *util.Quadlet) ([]string, []strin
 func generateStopCommand(quadctl *util.State, q *util.Quadlet) []string {
 	cmd := []string{}
 	resName := q.ID
-	if q.Type == ".container" {
-		resName = q.GeneratedNames["container"]
-	} else if q.Type == ".pod" {
-		resName = q.GeneratedNames["pod_name"]
+	if q.ResourceName != "" {
+		resName = q.ResourceName
 	}
 
 	switch q.Type {
@@ -354,6 +340,18 @@ func generateStopCommand(quadctl *util.State, q *util.Quadlet) []string {
 // optional, so the section and the value slice may both be absent.
 func kubeDownForce(q *util.Quadlet) bool {
 	return strings.EqualFold(util.LastValue(q.Sections["Kube"], "KubeDownForce"), "true")
+}
+
+// resolveVolumeRef rewrites the source half of a Volume= value - everything before the first
+// ":" - when it names a .volume quadlet, leaving the container path and options alone. A
+// source that is a host path or a pre-existing podman volume is passed through untouched.
+func resolveVolumeRef(q *util.Quadlet, val string) string {
+	source, rest, hasRest := strings.Cut(val, ":")
+	resolved := q.ResolveRef(source)
+	if !hasRest {
+		return resolved
+	}
+	return resolved + ":" + rest
 }
 
 // getRawPodmanArgs turns the PodmanArgs= lines of a section into argv. Each line is a command

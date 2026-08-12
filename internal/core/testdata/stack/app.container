@@ -10,6 +10,8 @@ ReadOnly=true
 AddCapability=NET_ADMIN
 Network=front.network
 Volume=data.volume:/var/lib/data
+Volume=cache.volume:/var/cache
+Volume=/srv/html:/usr/share/nginx/html:ro
 Pod=stack.pod
 
 [Service]

@@ -1,3 +1,4 @@
 [Pod]
 PodName=stack-pod
 PublishPort=9090:90
+Network=front.network

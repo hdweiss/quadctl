@@ -97,24 +97,31 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 ## 2. Functional bugs
 
-- [ ] **Existence check uses the wrong name** (`core/handlers.go:74`, `:1670`).
+- [x] **Existence check uses the wrong name** (`core/handlers.go:74`, `:1670`).
   `resourceExists(q.Type, q.ID)` checks the *file* base name, but the resource is created
   as `ContainerName=` / `PodName=` when set. For `app.container` with `ContainerName=myapp`,
   the check always reports "doesn't exist", so `create` re-runs on every invocation and
-  podman fails with "name already in use". Should use `q.GeneratedNames[...]`.
+  podman fails with "name already in use".
+  *Fixed by `PLAN.md` Phase 4:* the check uses `q.ResourceName`.
 
-- [ ] **`--name` is emitted twice for containers.** **[verified]**
+- [x] **`--name` is emitted twice for containers.** **[verified]**
   Once explicitly (`core/handlers.go:1446`) and again through the schema mapping of
   `ContainerName`. Output:
   `podman container create --name myapp --restart always --name myapp … alpine`.
+  *Fixed by `PLAN.md` Phase 4:* `ContainerName` is folded into the single explicit `--name`.
 
-- [ ] **`VolumeName=` / `NetworkName=` are ignored in podman-direct mode.** **[verified]**
-  Both keys are `continue`d in `generateCreateCommand` (`core/handlers.go:1349`, `:1381`)
-  and the resource is created under the file's base name (`cmd = append(cmd, q.ID)` at
-  `:1366`, `:1400`). Under systemd the same quadlet produces `systemd-<id>` or the
-  configured name — and `HandleSystemdRemove` looks for exactly those (`:863`, `:878`).
-  So the same quadlet yields different resource names depending on `-s`, and volumes
-  created in direct mode are never cleaned up by `-s rm`.
+- [x] **`VolumeName=` / `NetworkName=` are ignored in podman-direct mode.** **[verified]**
+  Both keys were `continue`d in `generateCreateCommand` and the resource was created under
+  the file's base name. Under systemd the same quadlet produces `systemd-<id>` or the
+  configured name — and `HandleSystemdRemove` looks for exactly those. So the same quadlet
+  yielded different resource names depending on `-s`, and volumes created in direct mode
+  were never cleaned up by `-s rm`.
+  *Fixed by `PLAN.md` Phase 4:* one rule on both paths — `XName=` when the file gives one,
+  `systemd-<id>` when it doesn't (`util.ResolveResourceName`), resolved once at parse time
+  into `Quadlet.ResourceName`. References between quadlets (`Volume=data.volume:/srv`,
+  `Network=front.network`, `Pod=stack.pod`) resolve to the referenced quadlet's name via
+  `Quadlet.RefNames`; a value that names no quadlet is passed through as written. Documented
+  in `README.md` under "Resource naming".
 
 - [ ] **`remove_volumes` / `remove_networks` are ignored by the non-systemd `remove`.**
   `HandleRemove` (`core/handlers.go:241-279`) unconditionally emits `podman volume rm` /
@@ -386,9 +393,9 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   inconsistent. Return errors; let `main` decide the exit code. *(`PLAN.md` 1.2 — the count
   was 60 by the time it was done; `main()` is now the only exit.)*
 
-- [ ] **Factor out the repeated "resolve display name for a quadlet" block** — the same
-  `resName/resType` derivation appears at `core/handlers.go:132-138`, `185-190`, `226-230`,
-  `248-254`, `1551-1596`, `1635-1640`.
+- [x] **Factor out the repeated "resolve display name for a quadlet" block** — the same
+  `resName/resType` derivation appeared in six places. *Done in `PLAN.md` Phase 4:* the name
+  is resolved once at parse time and read back through `Quadlet.DisplayName`.
 
 - [ ] **Dead code to delete or wire up.** `schema/validator.go` (~256 lines) was deleted in
   `PLAN.md` 2.3: its `Handler`/`AttributeSchema` machinery was a parallel model that shared
@@ -493,6 +500,8 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   (`util/config/quadctl.ini:12` and `:32`) — a word is missing, and it should say which
   variables (`$HOME`, `$XDG_*`) are not expanded.
 
-- [ ] **Document the podman-direct vs systemd naming difference** once §2's
-  `VolumeName`/`NetworkName` inconsistency is resolved — users need to know that
-  `-s` and non-`-s` runs may address different podman resources.
+- [x] **Document the podman-direct vs systemd naming difference** once §2's
+  `VolumeName`/`NetworkName` inconsistency is resolved. *Done in `PLAN.md` Phase 4:* the
+  difference is gone rather than documented — both paths use quadlet's rule — and
+  `README.md` "Resource naming" says what the resulting names are and why they aren't the
+  file names.

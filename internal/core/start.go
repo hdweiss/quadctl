@@ -35,16 +35,8 @@ func HandleStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, erro
 		// Use generateStartupCommands
 		cmd, warns := generateStartupCommand(quadctl, q)
 
-		resType := q.Type
-		resName := q.ID
-		if q.Type == ".container" {
-			resName = q.GeneratedNames["container"]
-		} else if q.Type == ".pod" {
-			resName = q.GeneratedNames["pod_name"]
-		}
-
 		if len(cmd) > 0 {
-			c := NewCommand(fmt.Sprintf("Starting %s %s", resType, resName))
+			c := NewCommand(fmt.Sprintf("Starting %s %s", q.Type, q.DisplayName()))
 			c.Cmd = cmd
 			c.Warnings = warns
 			commands = append(commands, c)

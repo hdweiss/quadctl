@@ -47,13 +47,6 @@ func HandleRun(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error)
 		if q.Type != ".container" && q.Type != ".kube" {
 			continue
 		}
-		resName := q.ID
-		if q.Type == ".container" {
-			resName = q.GeneratedNames["container"]
-		} else if q.Type == ".pod" {
-			resName = q.GeneratedNames["pod_name"]
-		}
-
 		// For 'run' command, we need to generate 'podman run' commands instead of 'podman start' for containers.
 		cmd, warns := generateRunCommand(quadctl, q)
 		warnings := []string{}
@@ -61,7 +54,7 @@ func HandleRun(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error)
 			warnings = append(warnings, fmt.Sprintf("%s: %s\n", filepath.Base(q.Filepath), w))
 		}
 		if len(cmd) > 0 {
-			command := NewCommand(fmt.Sprintf("Running %s %s", q.Type, resName))
+			command := NewCommand(fmt.Sprintf("Running %s %s", q.Type, q.DisplayName()))
 			command.Cmd = cmd
 			command.Warnings = warnings
 

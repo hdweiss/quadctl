@@ -89,17 +89,71 @@ func (s *State) Cleanup() {
 
 // Quadlet represents a parsed Quadlet file and its relationships.
 type Quadlet struct {
-	ID             string // Base name without extension (e.g., "my-app")
-	Filepath       string
-	Type           string // .container, .pod, .network, .volume
-	Sections       map[string]map[string][]string
-	Deps           []string                 // IDs of other quadlets that must run first
-	ParentPod      string                   // If this is a container, the ID of its parent pod
-	RestartPolicy  string                   // [Service] Restart=
-	GeneratedNames map[string]string        // Key: name type, Value: specific name (useful for ps filters)
+	ID            string // Base name without extension (e.g., "my-app")
+	Filepath      string
+	Type          string // .container, .pod, .network, .volume
+	Sections      map[string]map[string][]string
+	Deps          []string // IDs of other quadlets that must run first
+	ParentPod     string   // If this is a container, the ID of its parent pod
+	RestartPolicy string   // [Service] Restart=
+	AutoUpdate    string   // [Container] AutoUpdate=
+
+	// ResourceName is the name podman knows this quadlet's resource by - see
+	// ResolveResourceName for the rule. Empty for .kube, whose resources are named by the
+	// Kubernetes YAML rather than by the quadlet file.
+	ResourceName string
+	// PodResourceName is the resolved name of the pod a .container belongs to, taken from
+	// the pod quadlet's own ResourceName. Empty when the container is not in a pod.
+	PodResourceName string
+	// RefNames maps a quadlet reference exactly as written in a Volume=/Network=/Pod= value
+	// ("data.volume") to the podman resource name it stands for ("systemd-data"). Resolved
+	// at parse time, where the sibling quadlets are in hand. Values that name no quadlet - a
+	// bind-mount path, "host" - are absent and are passed through as written.
+	RefNames map[string]string
+
 	ServiceName    string                   // The name of the systemd unit (from quadlet file or default to <id>-<type>)
 	KubernetesYaml string                   // If specified, the path to the Kubernetes YAML file for this quadlet
 	KubeResources  []map[string]interface{} //type, name, image for any pod or container defined in k8s yaml
+}
+
+// systemdNamePrefix is what podman's quadlet generator prefixes a resource name with when the
+// quadlet file does not give one explicitly, so that generated resources cannot collide with
+// ones the user created by hand.
+const systemdNamePrefix = "systemd-"
+
+// ResolveResourceName gives the podman name for the resource a quadlet file describes. It is
+// quadlet's own rule, and quadctl now follows it whether the resource is created through
+// systemd or by quadctl itself: the explicit ContainerName=/PodName=/VolumeName=/NetworkName=
+// when the file sets one, "systemd-<file base name>" when it doesn't.
+//
+// Under -s the names are not quadctl's to choose - the generator picks them - so this is the
+// only rule that can hold on both paths. Following it everywhere is what makes `quadctl rm`
+// and `quadctl -s rm` address the same volume, and what lets ps match a container by name
+// instead of by suffix (TODO.md section 2, PLAN.md Phase 4).
+func ResolveResourceName(id, configured string) string {
+	if configured != "" {
+		return configured
+	}
+	return systemdNamePrefix + id
+}
+
+// DisplayName is what to call this quadlet in output and in the commands that address it by
+// name: the podman resource name where the file describes one, the file's own base name
+// otherwise (.kube, whose resources are named by its YAML).
+func (q *Quadlet) DisplayName() string {
+	if q.ResourceName != "" {
+		return q.ResourceName
+	}
+	return q.ID
+}
+
+// ResolveRef returns the podman resource name a written Volume=/Network=/Pod= value stands
+// for, or the value unchanged when it names no quadlet.
+func (q *Quadlet) ResolveRef(val string) string {
+	if name, ok := q.RefNames[val]; ok {
+		return name
+	}
+	return val
 }
 
 type Option struct {
@@ -387,11 +441,11 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	id := strings.TrimSuffix(base, ext)
 
 	q := &Quadlet{
-		ID:             id,
-		Filepath:       path,
-		Type:           ext,
-		Sections:       make(map[string]map[string][]string),
-		GeneratedNames: make(map[string]string),
+		ID:       id,
+		Filepath: path,
+		Type:     ext,
+		Sections: make(map[string]map[string][]string),
+		RefNames: make(map[string]string),
 	}
 
 	if err := parseIniFile(path, q); err != nil {
@@ -402,7 +456,6 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	var confServiceName string
 	switch q.Type {
 	case ".container":
-		q.GeneratedNames["container"] = id
 		confServiceName = LastValue(q.Sections["Container"], "ServiceName")
 	case ".pod":
 		confServiceName = LastValue(q.Sections["Pod"], "ServiceName")
@@ -440,23 +493,25 @@ func parseQuadlet(path string) (*Quadlet, error) {
 		}
 	}
 
+	// The name podman will know this resource by, resolved once here so that every command
+	// quadctl builds - create, start, stop, rm, the ps filters - addresses the same thing.
+	switch q.Type {
+	case ".container":
+		q.ResourceName = ResolveResourceName(id, LastValue(q.Sections["Container"], "ContainerName"))
+	case ".pod":
+		q.ResourceName = ResolveResourceName(id, LastValue(q.Sections["Pod"], "PodName"))
+	case ".volume":
+		q.ResourceName = ResolveResourceName(id, LastValue(q.Sections["Volume"], "VolumeName"))
+	case ".network":
+		q.ResourceName = ResolveResourceName(id, LastValue(q.Sections["Network"], "NetworkName"))
+	}
+
 	// Specific checks based on parsing
 	if contSec, ok := q.Sections["Container"]; ok {
-		if val := LastValue(contSec, "ContainerName"); val != "" {
-			q.GeneratedNames["container"] = val
-		}
 		if val := LastValue(contSec, "Pod"); val != "" {
 			q.ParentPod = strings.TrimSuffix(val, ".pod")
 		}
-		if val := LastValue(contSec, "AutoUpdate"); val != "" {
-			q.GeneratedNames["auto_update"] = val
-		}
-	}
-
-	if podSec, ok := q.Sections["Pod"]; ok {
-		if val := LastValue(podSec, "PodName"); val != "" {
-			q.GeneratedNames["pod_name"] = val
-		}
+		q.AutoUpdate = LastValue(contSec, "AutoUpdate")
 	}
 
 	if svcSec, ok := q.Sections["Service"]; ok {
@@ -576,6 +631,32 @@ func LastValue(section map[string][]string, key string) string {
 	return vals[len(vals)-1]
 }
 
+// quadletRefID reports whether val names another quadlet of the given type - quadlet only
+// treats a value as a reference when it carries the extension, so "front.network" is one and
+// "host" or "/srv/data" is not - and returns the referenced file's base name.
+func quadletRefID(val, ext string) (string, bool) {
+	if !strings.HasSuffix(val, ext) || val == ext {
+		return "", false
+	}
+	return strings.TrimSuffix(val, ext), true
+}
+
+// resolveQuadletRef records, and returns, the podman name that a reference written as
+// "<id><ext>" resolves to: the referenced quadlet's own resolved name when it is one of the
+// siblings, and quadlet's default otherwise. A reference to a file that isn't in the
+// directory still gets a name rather than being passed through as written - "front.network"
+// is not a podman network - so the resulting command fails on the missing network instead of
+// silently creating one named after the file.
+func resolveQuadletRef(q *Quadlet, all map[string]*Quadlet, ref, ext string) string {
+	id := strings.TrimSuffix(ref, ext)
+	name := ResolveResourceName(id, "")
+	if target, ok := all[id]; ok && target.ResourceName != "" {
+		name = target.ResourceName
+	}
+	q.RefNames[ref] = name
+	return name
+}
+
 // extractDependencies determines implicit and explicit requirements
 func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 	depSet := make(map[string]bool)
@@ -603,36 +684,42 @@ func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 		if pod := LastValue(cont, "Pod"); pod != "" {
 			podID := strings.TrimSuffix(pod, ".pod")
 			depSet[podID] = true
-			// Get the user-specified pod name for potential use in ps filters, otherwise will use pod ID as the pod name.
-			// The referenced pod file may not exist in this directory at all; the missing dependency
-			// is reported by topologicalSort, so here just fall back to the ID.
-			podName := podID
-			if parent, ok := all[podID]; ok && parent.GeneratedNames["pod_name"] != "" {
-				podName = parent.GeneratedNames["pod_name"]
-			}
-			q.GeneratedNames["pod_name"] = podName
+			q.PodResourceName = resolveQuadletRef(q, all, pod, ".pod")
 		}
 
 		for _, net := range cont["Network"] {
-			id := strings.TrimSuffix(net, ".network")
-			if _, exists := all[id]; exists {
-				depSet[id] = true
+			if id, ok := quadletRefID(net, ".network"); ok {
+				resolveQuadletRef(q, all, net, ".network")
+				if _, exists := all[id]; exists {
+					depSet[id] = true
+				}
 			}
 		}
 
 		for _, vol := range cont["Volume"] {
 			// Vol format source.volume:/path
-			sourceVol := strings.TrimSuffix(strings.Split(vol, ":")[0], ".volume")
-			if _, exists := all[sourceVol]; exists {
-				depSet[sourceVol] = true
+			source := strings.Split(vol, ":")[0]
+			if id, ok := quadletRefID(source, ".volume"); ok {
+				resolveQuadletRef(q, all, source, ".volume")
+				if _, exists := all[id]; exists {
+					depSet[id] = true
+				}
 			}
 		}
 	} else if q.Type == ".pod" {
 		podSec := q.Sections["Pod"]
 		for _, net := range podSec["Network"] {
-			id := strings.TrimSuffix(net, ".network")
-			if _, exists := all[id]; exists {
-				depSet[id] = true
+			if id, ok := quadletRefID(net, ".network"); ok {
+				resolveQuadletRef(q, all, net, ".network")
+				if _, exists := all[id]; exists {
+					depSet[id] = true
+				}
+			}
+		}
+		for _, vol := range podSec["Volume"] {
+			source := strings.Split(vol, ":")[0]
+			if _, ok := quadletRefID(source, ".volume"); ok {
+				resolveQuadletRef(q, all, source, ".volume")
 			}
 		}
 	}

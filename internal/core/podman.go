@@ -108,8 +108,7 @@ func getContainerPS(runner util.Runner, quadlets []*util.Quadlet) ([][]string, e
 		}
 		//filter for containers that match our quadlet definitions by name or parent pod
 		for _, q := range quadlets {
-			//if q.Type == ".container" && strings.HasSuffix(parts[1], q.GeneratedNames["container"]) || (q.ParentPod != "" && strings.HasSuffix(parts[2], q.ParentPod)) {
-			if q.Type == ".container" && strings.HasSuffix(parts[1], q.GeneratedNames["container"]) || (q.ParentPod != "" && strings.HasSuffix(parts[2], q.GeneratedNames["pod_name"])) {
+			if q.Type == ".container" && strings.HasSuffix(parts[1], q.ResourceName) || (q.ParentPod != "" && strings.HasSuffix(parts[2], q.PodResourceName)) {
 				psInfo = append(psInfo, parts)
 				break
 			}

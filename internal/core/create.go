@@ -24,8 +24,11 @@ func HandleCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 			continue
 		}
 
-		//Only create if resource doesn't exist.
-		if !resourceExists(quadctl.Runner, q.Type, q.ID) {
+		// Only create if the resource doesn't exist. The check has to use the name podman
+		// will actually give it, not the file's base name: a quadlet with ContainerName= set
+		// looked absent on every run, so create ran every time and podman refused the
+		// duplicate name (TODO.md section 2).
+		if !resourceExists(quadctl.Runner, q.Type, q.ResourceName) {
 			// For 'run' command, skip creating containers since 'podman run' will create them if they don't exist.
 			if quadctl.Subcommand == "run" && q.Type == ".container" {
 				continue
@@ -43,8 +46,8 @@ func HandleCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("[INFO] %s: Restart policy configured (%s). Ensure podman-restart.service is enabled.\n", q.Filepath, q.RestartPolicy))
 			}
 			// Warn about AutoUpdate configuration, if applicable
-			if q.GeneratedNames["auto_update"] != "" {
-				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("[INFO] %s: Image AutoUpdate enabled (%s)\n", q.Filepath, q.GeneratedNames["auto_update"]))
+			if q.AutoUpdate != "" {
+				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("[INFO] %s: Image AutoUpdate enabled (%s)\n", q.Filepath, q.AutoUpdate))
 			}
 
 			commands = append(commands, cmd)

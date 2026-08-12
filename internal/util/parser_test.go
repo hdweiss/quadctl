@@ -22,9 +22,9 @@ func TestParseQuadlet(t *testing.T) {
 	if q.Type != ".container" {
 		t.Errorf("Type = %q, want %q", q.Type, ".container")
 	}
-	// ContainerName= wins over the file's base name.
-	if got := q.GeneratedNames["container"]; got != "web-app" {
-		t.Errorf("GeneratedNames[container] = %q, want %q", got, "web-app")
+	// ContainerName= wins over the default systemd-<id>.
+	if q.ResourceName != "web-app" {
+		t.Errorf("ResourceName = %q, want %q", q.ResourceName, "web-app")
 	}
 	if q.ParentPod != "stack" {
 		t.Errorf("ParentPod = %q, want %q", q.ParentPod, "stack")
@@ -36,8 +36,8 @@ func TestParseQuadlet(t *testing.T) {
 	if q.ServiceName != "app" {
 		t.Errorf("ServiceName = %q, want %q", q.ServiceName, "app")
 	}
-	if got := q.GeneratedNames["auto_update"]; got != "registry" {
-		t.Errorf("GeneratedNames[auto_update] = %q, want %q", got, "registry")
+	if q.AutoUpdate != "registry" {
+		t.Errorf("AutoUpdate = %q, want %q", q.AutoUpdate, "registry")
 	}
 
 	// The drop-in directory is merged into the same section.
@@ -66,6 +66,83 @@ func TestParseQuadletServiceNames(t *testing.T) {
 		}
 		if q.ServiceName != tt.want {
 			t.Errorf("%s: ServiceName = %q, want %q", tt.file, q.ServiceName, tt.want)
+		}
+	}
+}
+
+// TestResolveResourceNames pins the rule PLAN.md Phase 4 settled on: the explicit
+// ContainerName=/PodName=/VolumeName=/NetworkName= where the file gives one, quadlet's own
+// systemd-<id> where it doesn't. It has to hold on both execution paths, because under -s
+// the generator picks the names and quadctl only gets to agree with it.
+func TestResolveResourceNames(t *testing.T) {
+	tests := []struct {
+		file string
+		want string
+	}{
+		{"app.container", "web-app"},   // ContainerName=
+		{"db.container", "systemd-db"}, // no name given: quadlet's default
+		{"stack.pod", "stack-pod"},     // PodName=
+		{"data.volume", "data"},        // VolumeName=
+		{"front.network", "front"},     // NetworkName=
+	}
+
+	for _, tt := range tests {
+		q, err := ParseQuadletFile(filepath.Join(fixtures, tt.file))
+		if err != nil {
+			t.Fatalf("%s: %v", tt.file, err)
+		}
+		if q.ResourceName != tt.want {
+			t.Errorf("%s: ResourceName = %q, want %q", tt.file, q.ResourceName, tt.want)
+		}
+	}
+}
+
+// TestResolveRefs covers the other half of the naming rule: a Volume=/Network=/Pod= value
+// naming another quadlet has to resolve to that quadlet's resource name, or the container
+// mounts "data" while the volume was created as "systemd-data". Values that name no quadlet -
+// a bind mount, a network mode - are passed through untouched.
+func TestResolveRefs(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "cache.volume"), "[Volume]\nDriver=local\n")
+	write(t, filepath.Join(dir, "named.volume"), "[Volume]\nVolumeName=shared-cache\n")
+	write(t, filepath.Join(dir, "back.network"), "[Network]\nDriver=bridge\n")
+	write(t, filepath.Join(dir, "group.pod"), "[Pod]\n")
+	write(t, filepath.Join(dir, "app.container"), strings.Join([]string{
+		"[Container]",
+		"Image=alpine",
+		"Pod=group.pod",
+		"Network=back.network",
+		"Volume=cache.volume:/var/cache",
+		"Volume=named.volume:/srv/shared",
+		"Volume=/etc/localtime:/etc/localtime:ro",
+		"",
+	}, "\n"))
+
+	quadlets, err := InitQuadlets(&State{SearchDir: dir})
+	if err != nil {
+		t.Fatalf("InitQuadlets: %v", err)
+	}
+	var app *Quadlet
+	for _, q := range quadlets {
+		if q.ID == "app" {
+			app = q
+		}
+	}
+	if app == nil {
+		t.Fatal("app.container missing from the parsed set")
+	}
+
+	if app.PodResourceName != "systemd-group" {
+		t.Errorf("PodResourceName = %q, want %q", app.PodResourceName, "systemd-group")
+	}
+	for ref, want := range map[string]string{
+		"back.network":   "systemd-back",   // sibling with no explicit name
+		"cache.volume":   "systemd-cache",  //
+		"named.volume":   "shared-cache",   // sibling with VolumeName=
+		"/etc/localtime": "/etc/localtime", // a host path, not a reference
+	} {
+		if got := app.ResolveRef(ref); got != want {
+			t.Errorf("ResolveRef(%q) = %q, want %q", ref, got, want)
 		}
 	}
 }
