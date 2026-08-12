@@ -4,7 +4,8 @@ Companion to `TODO.md` (the defect list) and `FEATURES.md` (the parking lot). Th
 order of operations: refactor, not rewrite, with two contained subsystem rewrites along
 the way.
 
-**Status:** Phases 0 through 4 are done. Next up is Phase 5.
+**Status:** Phases 0 through 4 are done, and Phase 6's package work (6.1, 6.2) with them.
+Phase 5 is deliberately skipped for now; 6.3 through 6.6 are next.
 
 ## Principles
 
@@ -278,30 +279,38 @@ comments](https://go.dev/doc/comment). Phase 2.5 is the piece of that audit wort
 immediately; everything below either waits on Phase 3 or is independent of the refactor
 entirely.*
 
-**6.1 — Break up `util` (M). Requires 3.2.** `util` is the package name the Go blog names as
-an anti-pattern, and here it is literal: five unrelated responsibilities sharing a directory
-because there was nowhere else to put them. Target:
+**6.1 — Break up `util` (M). Requires 3.2. — done.** `util` is the package name the Go blog
+names as an anti-pattern, and here it was literal: five unrelated responsibilities sharing a
+directory because there was nowhere else to put them. `core` had the same vague name with
+cohesive contents. What landed:
 
 ```
-internal/quadlet   parser.go + flags.go   Quadlet, Option, INI parsing, search-dir resolution
-internal/config    files.go               config discovery, embedded quadctl.ini, file I/O
-internal/podman    options.go             quadlet option -> podman flag mapping
-internal/tui       tui.go                 the bubbletea selector
-internal/exec      runner.go              Runner/ExecRunner/RecordingRunner
+internal/quadlet   state.go parser.go search.go   State, Quadlet, INI parsing, names, deps, search dir
+internal/config    config.go files.go             quadctl.ini, the embedded default, file I/O
+internal/podman    options.go query.go            option -> podman argv; ResourceExists/ContainerPS
+internal/schema    + options.go                   the option model, now indexed here too
+internal/runner    runner.go                      Runner/ExecRunner/RecordingRunner + the side shell-outs
+internal/tui       tui.go                         the bubbletea selector
+internal/command   command.go, one file per cmd   Command, RunCommands, the podman-direct handlers
+internal/systemd   install.go lifecycle.go list.go   the -s half of every subcommand
 ```
 
-`core` has the same vague-name problem with cohesive contents; `internal/command` is the
-honest name for "dispatch plus handlers", and splitting the 823 lines of `systemd_*.go` into
-`internal/systemd` is defensible but optional. `schema` keeps its name — it is a real noun
-for what it holds.
+Dependencies run one way: `main` → `command`/`systemd` → `podman` → `quadlet` →
+`config`/`runner`/`schema`.
 
-*Why it waits:* `util.Quadctl` lives in `parser.go` and is config + flags + run state in one
-struct. 3.2 splits it into `Config` and `State`, which is what decides whether it lands in
-`internal/config` or stays with `main`. Doing 6.1 first means splitting that struct twice.
+*Four things the plan didn't anticipate.* `State` went to `quadlet` rather than `config` or
+`main`: the parser mutates it (scratch dirs, `DotQuadletsPath`), and `command` needs it, so
+`main` was never an option without a cycle. `options.go` turned out to be pure schema
+indexing rather than podman mapping — it does not mention podman at all — so it went into
+`schema` as `QuadletOptions`/`AllQuadletOptions`, and `internal/podman` took the renderer
+(`QuadletOptionToPodman`, now `OptionArgs`) plus the live-state queries that used to sit in
+`core/podman.go`. `ErrUsage` and `ToolName` had no caller outside package `main`, so they are
+`errUsage` and `toolName` there instead of exported from a package unrelated to either. And
+splitting `systemd` out needed only `Label` and `TableStyle` exported from `command` —
+`unitLabel` moved rather than being exported, since only the systemd side ever used it.
 
-**6.2 — Package doc comments (S).** Every package should have one, in exactly one file
-(`doc.go` when it runs long). There are currently none — not on `core`, `util`, or `schema`.
-Best done at the end of 6.1, when the package boundaries are the ones that will last.
+**6.2 — Package doc comments (S). — done.** One per package, in the file that carries the
+package's main type. Nine of them, counting `main`.
 
 **6.3 — `golangci-lint`, pinned as a tool dependency (S). Independent.** `go vet` is the
 floor and it is now in CI; a meta-linter is the ceiling. `unused` alone would have found the
@@ -331,7 +340,8 @@ Task (`Taskfile.yml`) if cross-platform matters.
 official layout guidance for a repo this shape.
 
 **Done when:** no package is named for its role in the build rather than its subject, and
-`golangci-lint` + tests + vet all gate a release that GoReleaser cuts.
+`golangci-lint` + tests + vet all gate a release that GoReleaser cuts. *Half met: the package
+names are settled and documented; the tooling half is 6.3–6.5.*
 
 ---
 
@@ -344,8 +354,9 @@ Phase 2  moves         ──▶ split files → registry → housekeeping      
 Phase 2.5 internal/    ──▶ pure rename                                    done
 Phase 3  rewrites      ──▶ value model → state split                      done
 Phase 4  consistency   ──▶ naming → matching → config → output → paths    done
-Phase 5  docs/release                                                      next
-Phase 6  go idiom      ──▶ util split → package docs → lint → release → tasks
+Phase 5  docs/release                                                      skipped for now
+Phase 6  go idiom      ──▶ util split → package docs                        done
+                          ──▶ lint → release → tasks                        next
                           (6.3–6.5 are independent; they can land any time)
 ```
 

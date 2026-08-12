@@ -1,7 +1,9 @@
 # TODO — bugs, fixes and inconsistencies
 
 Working list of defects, rough edges and inconsistencies found by reading through
-`main.go`, `core/`, `util/` and `schema/`, plus exercising the built binary.
+`main.go` and the packages under `internal/`, plus exercising the built binary. Locations
+cited below are where a defect was found; several name files that later moves have since
+renamed or split (`PLAN.md` 2.1, 2.5 and 6.1).
 
 Items marked **[verified]** were reproduced against the built binary on this machine
 (mostly via `-p` print mode, so nothing was actually created or destroyed). Everything
@@ -72,8 +74,8 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   command aborts the remaining ones (probably yes for `start`, no for `stop`/`rm`).
 
 - [ ] **`.kube` option schema is never loaded — two stacked bugs.**
-  1. `GetQuadletOptionsMap` has no `"kube"` case (`util/options.go:18-31`), so it returns
-     `nil` and `schemas["kube"]` is a nil map. Every `[Kube]` key except the hand-handled
+  1. `schema.QuadletOptions` has no `"kube"` case (`schema/options.go`), so it returns
+     `nil` and `AllQuadletOptions()["kube"]` is a nil map. Every `[Kube]` key except the hand-handled
      `Yaml`/`ServiceName`/`PodmanArgs` is dropped with a "Quadlet kube option not defined"
      warning that's invisible without `-v`. `ConfigMap`, `PublishPort`, `Network`,
      `UserNS`, `LogDriver`, `ExitCodePropagation`, `SetWorkingDirectory` are all ignored.
@@ -117,7 +119,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   yielded different resource names depending on `-s`, and volumes created in direct mode
   were never cleaned up by `-s rm`.
   *Fixed by `PLAN.md` Phase 4:* one rule on both paths — `XName=` when the file gives one,
-  `systemd-<id>` when it doesn't (`util.ResolveResourceName`), resolved once at parse time
+  `systemd-<id>` when it doesn't (`quadlet.ResolveResourceName`), resolved once at parse time
   into `Quadlet.ResourceName`. References between quadlets (`Volume=data.volume:/srv`,
   `Network=front.network`, `Pod=stack.pod`) resolve to the referenced quadlet's name via
   `Quadlet.RefNames`; a value that names no quadlet is passed through as written. Documented
@@ -173,7 +175,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `strings.HasSuffix(parts[1], q.GeneratedNames["container"])` made quadlet `web` match an
   unrelated container named `myweb`. The `||` clause was also outside the type guard
   (`&&` binds tighter), so pod-name matching wasn't scoped to `.container` quadlets.
-  *Fixed by `PLAN.md` Phase 4:* `core.quadletOwnsContainer` compares names exactly, scoped
+  *Fixed by `PLAN.md` Phase 4:* `podman.quadletOwnsContainer` compares names exactly, scoped
   per quadlet type. Suffix matching was only ever covering for the naming divergence the
   same phase removed; `.kube` matches on the pod podman kube play creates and on the
   `<pod>-<container>` name it gives each container.
@@ -198,7 +200,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   (`core/commands.go:63-65`), corrupting values that legitimately contain quotes.
   *Fixed by `PLAN.md` 3.1:* quoting is resolved once, where the value is written, so what
   reaches exec is argv and nothing needs stripping. Print mode shell-quotes it back
-  (`core.ShellQuote`), so what it shows is what would run.
+  (`command.ShellQuote`), so what it shows is what would run.
 
 - [x] **`html/template` used for shell commands and the config file**
   (`main.go:5`, `util/parser.go:8`, `util/files.go:7`). These are not HTML; the escaping
@@ -219,10 +221,10 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   (`util/parser.go:18`) doesn't list them. Also: any unrecognized extension in a quadlet
   directory is skipped silently — worth at least a `-v` warning.
 
-- [ ] **`[Pod] Volume=` is not treated as a dependency** (`util/parser.go:585-593` only
+- [ ] **`[Pod] Volume=` is not treated as a dependency** (`quadlet/parser.go`, `extractDependencies` only
   looks at `Network=` for pods), so a pod's volume may not be created first.
 
-- [ ] **k8s YAML handling is fragile** (`util/parser.go:758-811`): the read error is
+- [ ] **k8s YAML handling is fragile** (`quadlet/parser.go`, `readK8sYaml`): the read error is
   discarded (`yml, _ := readYamlFile(...)`), only a single `kind: Pod` document is
   supported (multi-document YAML is the norm for `podman kube play`), and every failure is
   an `os.Exit(1)` with a bare message. A `[Kube]` section without `Yaml=` calls
@@ -230,12 +232,12 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   *Partly addressed by `PLAN.md` 1.2:* the failures are errors now, naming the file. The
   discarded read error and single-document limitation are still open.
 
-- [ ] **`podman quadlet list` output is split on `,`** (`core/handlers.go:1688`) — breaks on
+- [ ] **`podman quadlet list` output is split on `,`** (`systemd/list.go`) — breaks on
   any path containing a comma. The systemctl fallback puts `ServiceName` in the
   "UNIT NAME" column without the `.service` suffix (`:1750`), so the two code paths
   produce different tables.
 
-- [ ] **Writability check tests permission bits, not access** (`core/handlers.go:307`):
+- [ ] **Writability check tests permission bits, not access** (`systemd/install.go`, `HandleCreate`):
   `perm&0200 != 0200 && perm&0020 != 0020 && perm&0002 != 0002` ignores ownership entirely.
   Just attempt the write (or use `unix.Access`) and report the real error.
 
@@ -326,7 +328,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   indentation.
   *Fixed by `PLAN.md` Phase 4:* the default flipped. Anything reporting that quadctl could
   not use part of a quadlet file is shown at default verbosity; commentary on how a command
-  was built carries `core.InfoPrefix` and stays behind `-v`. Each line is flattened onto one
+  was built carries `command.InfoPrefix` and stays behind `-v`. Each line is flattened onto one
   line and prefixed with the command it belongs to.
   **Deliberately not changed:** warnings still print as a block before the first command
   runs, rather than beside it. A spinner redraws its own line, so anything interleaved with
@@ -335,7 +337,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 - [x] **ANSI colour is emitted unconditionally**, including when stdout is a pipe or file —
   every table used `table.StyleColoredYellowWhiteOnBlack` and the spinner ran regardless of
-  TTY. *Fixed by `PLAN.md` Phase 4:* `core.UseColor` honours `--no-color`, `NO_COLOR` and
+  TTY. *Fixed by `PLAN.md` Phase 4:* `command.UseColor` honours `--no-color`, `NO_COLOR` and
   `TERM=dumb`, and otherwise only colours a terminal; the spinner runs only on a terminal,
   and prints its outcome line plainly when there isn't one.
 
@@ -371,7 +373,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 - [x] **Inconsistent labels and naming in output**: "Systemd stopping .container app" vs
   "Starting .container app" vs "Systemd installing quadlets to …"; the raw dotted type
   (`.container`) was printed as if it were a word. *Fixed by `PLAN.md` Phase 4:*
-  `core.label` builds every one of them, so they all read `Starting container app`. The
+  `command.Label` builds every one of them, so they all read `Starting container app`. The
   systemd variants name the unit systemctl acts on rather than the podman resource.
 
 - [x] **Command generation is nondeterministic.** **[verified]** *Fixed by `PLAN.md` 1.3.*
@@ -398,7 +400,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 - [x] **Default paths disagree between code and shipped config**: `initState` used
   `/etc/containers/systemd/users` for `QuadletUserPath`, the template ini
   `{{.home}}/.config/containers/systemd`. *Fixed by `PLAN.md` Phase 4:*
-  `util.DefaultUserQuadletPath` is the XDG path the ini writes — the other one is not
+  `config.DefaultUserQuadletPath` is the XDG path the ini writes — the other one is not
   writable by the rootless user quadctl was about to create it as. A test fails if the two
   drift apart again.
 
@@ -438,8 +440,9 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   nothing with the live `SchemaOption` one, so a future `validate` command (`FEATURES.md`)
   gains nothing from it. **Still unused, still open:**
   `GetKubeSchema`/`GetImageSchema`/`GetBuildSchema`/`GetVolumeSchema`, `ValidateSchema`,
-  `GetPodmanOptionsMap`/`assemblePodmanOptionsMap`, `util.ListFiles`, `util.DeleteFile`,
-  `optKubeAutoUpdate` (`schema/kube.go:58`, shadowed by `optAutoUpdate()` in the list).
+  `config.ListFiles`, `config.DeleteFile`, `optKubeAutoUpdate` (`schema/kube.go:58`, shadowed
+  by `optAutoUpdate()` in the list). `GetPodmanOptionsMap`/`assemblePodmanOptionsMap` went in
+  `PLAN.md` 6.1, when the option indexing moved into `schema`.
 
 - [x] **Drop the dot-imports** (`main.go:10-11`, `util/options.go:4`) — `. "…/core"`,
   `. "…/schema"` make it impossible to tell where `Command`, `SchemaOption`,
@@ -457,19 +460,22 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `main.go`/`registry.go` stay at the root: that is the documented shape for a single
   command, and one binary does not need `cmd/quadctl/`. *Done in `PLAN.md` 2.5.*
 
-- [ ] **`util` is a grab-bag, and the name is the documented anti-pattern.**
+- [x] **`util` is a grab-bag, and the name is the documented anti-pattern.**
   [go.dev/blog/package-names](https://go.dev/blog/package-names) calls out `util`/`common`/
   `misc` by name: no context for the client, unfocused dependencies, collides with every
   other project's `util`. Here it holds five unrelated things — the domain model and INI
   parser (`parser.go`, 738 lines), config discovery and file I/O (`files.go`), the
   podman option mapping (`options.go`), a bubbletea selector (`tui.go`) and the `Runner`
   seam (`runner.go`) — plus what's left of `flags.go` (68 lines, just `ResolveSearchDir`).
-  Split per `PLAN.md` 6.1. `core` has the same problem with cohesive contents
-  (`internal/command` is the honest name); `schema` is fine as-is.
+  *Done in `PLAN.md` 6.1:* `util` is gone, split into `quadlet` (model, parser, `State`,
+  search dir), `config` (quadctl.ini plus file I/O), `podman` (option rendering, live-state
+  queries), `runner` and `tui`; the option indexing went into `schema`. `core` went with it —
+  `internal/command` for the podman-direct handlers and the shared `Command` machinery,
+  `internal/systemd` for the install/lifecycle half.
 
-- [ ] **No package doc comments anywhere.** Not on `core`, `util` or `schema`, and no
-  `doc.go`. Every package should have one, in exactly one file. *`PLAN.md` 6.2 — after 6.1,
-  so the boundaries being documented are the final ones.*
+- [x] **No package doc comments anywhere.** Not on `core`, `util` or `schema`, and no
+  `doc.go`. Every package should have one, in exactly one file. *Done in `PLAN.md` 6.2,*
+  after 6.1, so the boundaries documented are the final ones.
 
 ## 6. Tests, CI, repo hygiene
 
@@ -477,13 +483,13 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `json:"ignore-empty"` tags. CI (`.github/workflows/go.yml`) doesn't run vet, so it went
   unnoticed. Add `go vet` to CI. *Fixed by `PLAN.md` 2.3:* the file is gone and CI vets.
 
-- [x] **Test coverage was one file** (`util/options_test.go`) covering schema→podman option
+- [x] **Test coverage was one file** (`util/options_test.go`, now `podman/options_test.go`) covering schema→podman option
   templating only — nothing over the parser, dependency resolution, topological sort, path
   resolution or command generation, which is where every bug in §1 lived. *Done in `PLAN.md`
-  1.4 and 2.x:* eight test files now, including `util/flags_test.go` (search-dir table
-  test), `util/parser_test.go` (fixtures under `util/testdata/`), `core/generate_test.go`
-  against the `core/testdata/commands.golden` golden file, `core/prune_test.go` against a
-  temp dir, and `registry_test.go`. Layout follows the Go convention: tests beside the code,
+  1.4 and 2.x:* eight test files now, including `quadlet/search_test.go` (search-dir
+  table test), `quadlet/parser_test.go` (fixtures under `quadlet/testdata/`),
+  `command/generate_test.go` against the `command/testdata/commands.golden` golden file,
+  `systemd/prune_test.go` against a temp dir, and `registry_test.go`. Layout follows the Go convention: tests beside the code,
   fixtures in `testdata/`, which the go tool ignores.
 
 - [x] **`.gitignore` blocked test fixtures**: `*.container`, `*.pod`, `*.network`,
