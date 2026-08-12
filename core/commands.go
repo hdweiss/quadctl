@@ -28,6 +28,9 @@ type Command struct {
 	Output   []string
 	Error    error
 	Warnings []string
+	// Runner executes Cmd. RunCommands fills it in from the run state before running, so
+	// handlers that build a Command don't have to carry one around.
+	Runner util.Runner
 }
 
 func (c *Command) PreCmd() {
@@ -80,20 +83,13 @@ func DefaultRunFn(c *Command) {
 			c.Cmd[i] = strings.Trim(arg, `"`)
 		}
 
-		//fmt.Printf("Array of strings in my command:\n%q\n", c.Cmd)
-		cmd := exec.Command(c.Cmd[0], c.Cmd[1:]...)
-
 		if isForegroundRun(c.Cmd) {
 			fmt.Printf("Running in foreground: %s\n", strings.Join(c.Cmd, " "))
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Stdin = os.Stdin
-			c.Error = cmd.Run()
+			_, c.Error = c.Runner.Run(c.Cmd, util.RunOptions{Mode: util.Interactive})
 		} else {
-			output, err := cmd.CombinedOutput()
-			c.Output = []string{string(output)}
+			output, err := c.Runner.Run(c.Cmd, util.RunOptions{Mode: util.CaptureCombined})
+			c.Output = []string{output}
 			c.Error = err
-
 		}
 	}
 }
@@ -166,6 +162,7 @@ func RunCommands(quadctl *util.Quadctl, commands []Command) int {
 		}
 	} else if len(commands) > 0 {
 		for i, c := range commands {
+			c.Runner = quadctl.Runner
 			c.PreCmd()
 			c.RunCmd()
 			c.PostCmd()
@@ -267,7 +264,7 @@ func diagnoseFailedSystemctlCommand(quadctl *util.Quadctl, cmd []string) string 
 	statusArgs = append(statusArgs, "status", unit, "--no-pager", "-l", "--lines=0")
 
 	journalArgs := append([]string{"journalctl"}, userArgs...)
-	if invID := currentInvocationID(userArgs, unit); invID != "" {
+	if invID := currentInvocationID(quadctl.Runner, userArgs, unit); invID != "" {
 		// Scope to exactly this run (systemd's own lifecycle messages carry INVOCATION_ID,
 		// the unit's own process output carries the trusted _SYSTEMD_INVOCATION_ID), so we
 		// don't dredge up unrelated entries from previous runs of the same unit.
@@ -279,11 +276,11 @@ func diagnoseFailedSystemctlCommand(quadctl *util.Quadctl, cmd []string) string 
 	}
 
 	var b strings.Builder
-	if out, _ := exec.Command(statusArgs[0], statusArgs[1:]...).CombinedOutput(); len(out) > 0 {
-		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", strings.Join(statusArgs, " "), strings.TrimRight(string(out), "\n"))
+	if out, _ := quadctl.Runner.Run(statusArgs, util.RunOptions{Mode: util.CaptureCombined}); len(out) > 0 {
+		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", strings.Join(statusArgs, " "), strings.TrimRight(out, "\n"))
 	}
-	if out, _ := exec.Command(journalArgs[0], journalArgs[1:]...).CombinedOutput(); len(out) > 0 {
-		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", strings.Join(journalArgs, " "), strings.TrimRight(string(out), "\n"))
+	if out, _ := quadctl.Runner.Run(journalArgs, util.RunOptions{Mode: util.CaptureCombined}); len(out) > 0 {
+		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", strings.Join(journalArgs, " "), strings.TrimRight(out, "\n"))
 	}
 	return b.String()
 }
@@ -291,51 +288,36 @@ func diagnoseFailedSystemctlCommand(quadctl *util.Quadctl, cmd []string) string 
 // currentInvocationID returns the unit's current InvocationID (the ID systemd/journald tag every
 // log line from a single start-to-stop run with), or "" if the unit has none on record - e.g. it
 // was never found/loaded, or genuinely never ran.
-func currentInvocationID(userArgs []string, unit string) string {
+func currentInvocationID(runner util.Runner, userArgs []string, unit string) string {
 	args := append([]string{"systemctl"}, userArgs...)
 	args = append(args, "show", unit, "--property=InvocationID", "--value")
-	out, err := exec.Command(args[0], args[1:]...).Output()
+	out, err := runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
 	if err != nil {
 		return ""
 	}
-	id := strings.TrimSpace(string(out))
+	id := strings.TrimSpace(out)
 	if id == "" || strings.Trim(id, "0") == "" {
 		return ""
 	}
 	return id
 }
 
-func runCommand(args []string) error {
-	if len(args) == 0 {
-		return nil
-	}
+// The three helpers below are the non-Command shell-outs: side operations a handler needs
+// while it is still building its command list, rather than steps in that list.
 
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-
+// runCommand runs args with its output going straight to the terminal as it happens.
+func runCommand(runner util.Runner, args []string) error {
+	_, err := runner.Run(args, util.RunOptions{Mode: util.Stream})
 	return err
 }
 
-func runCommandSilently(args []string) error {
-	//if isRootful && args[0] != "sudo" {
-	//	args = append([]string{"sudo"}, args...)
-	//}
-	cmd := exec.Command(args[0], args[1:]...)
-	// Discard output
-	err := cmd.Run()
+// runCommandSilently runs args and throws the output away; only success or failure matters.
+func runCommandSilently(runner util.Runner, args []string) error {
+	_, err := runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
 	return err
 }
 
-func runCommandCapture(args []string) (string, error) {
-	//if isRootful && args[0] != "sudo" {
-	//	args = append([]string{"sudo"}, args...)
-	//}
-
-	//fmt.Printf("=> Running command: %s\n", strings.Join(args, " "))
-
-	cmd := exec.Command(args[0], args[1:]...)
-	output, err := cmd.Output()
-	return string(output), err
+// runCommandCapture runs args and returns its stdout for parsing.
+func runCommandCapture(runner util.Runner, args []string) (string, error) {
+	return runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
 }

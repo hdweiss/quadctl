@@ -71,7 +71,7 @@ func HandleCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		}
 
 		//Only create if resource doesn't exist.
-		if !resourceExists(q.Type, q.ID) {
+		if !resourceExists(quadctl.Runner, q.Type, q.ID) {
 			// For 'run' command, skip creating containers since 'podman run' will create them if they don't exist.
 			if quadctl.Subcommand == "run" && q.Type == ".container" {
 				continue
@@ -117,7 +117,7 @@ func HandleStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 	commands = append(commands, cmds...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
-	if info, err := getContainerPS(quadlets); err == nil && len(info) > 0 {
+	if info, err := getContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
 		if strings.Contains(info[0][3], "Up") {
 			cmd := HandleStop(quadctl, quadlets)
 			commands = append(commands, cmd...)
@@ -353,7 +353,7 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 			c.Output = append(c.Output, fmt.Sprintf("Linking directory %s -> %s", dest, searchDir))
 			f := func() {
 				if err := os.Symlink(searchDir, dest); err != nil {
-					//if err := runCommand([]string{prefix, "ln", "-s", sourceDir, filepath.Join(targetDir, filepath.Base(sourceDir))}); err != nil {
+					//if err := runCommand(quadctl.Runner, []string{prefix, "ln", "-s", sourceDir, filepath.Join(targetDir, filepath.Base(sourceDir))}); err != nil {
 					fmt.Fprintf(os.Stderr, "Error linking target directory: %v\n", err)
 					os.Exit(1)
 				}
@@ -366,7 +366,7 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 				c.Output = append(c.Output, fmt.Sprintf("Linking %s -> %s", dest, q.Filepath))
 				f := func() {
 					if err := os.Symlink(q.Filepath, dest); err != nil {
-						//if err := runCommand([]string{prefix, "ln", "-s", q.Filepath, dest}); err != nil {
+						//if err := runCommand(quadctl.Runner, []string{prefix, "ln", "-s", q.Filepath, dest}); err != nil {
 						fmt.Fprintf(os.Stderr, " Failed to link: %v\n", err)
 						os.Exit(1)
 					}
@@ -379,7 +379,7 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 					c.Output = append(c.Output, fmt.Sprintf("Linking directory %s -> %s", destDropIn, dropInDir))
 					f := func() {
 						if err := os.Symlink(dropInDir, destDropIn); err != nil {
-							//if err := runCommand([]string{prefix, "ln", "-s", dropInDir, destDropIn}); err != nil {
+							//if err := runCommand(quadctl.Runner, []string{prefix, "ln", "-s", dropInDir, destDropIn}); err != nil {
 							fmt.Fprintf(os.Stderr, "  Failed to link dir: %v\n", err)
 							os.Exit(1)
 						}
@@ -651,9 +651,10 @@ func validateQuadletGenerationCommand(quadctl *util.Quadctl, quadlets []*util.Qu
 		}
 		args = append(args, outDir, outDir, outDir)
 
-		genCmd := exec.Command(args[0], args[1:]...)
-		genCmd.Env = append(os.Environ(), "QUADLET_UNIT_DIRS="+targetDir)
-		output, err := genCmd.CombinedOutput()
+		output, err := quadctl.Runner.Run(args, util.RunOptions{
+			Mode: util.CaptureCombined,
+			Env:  []string{"QUADLET_UNIT_DIRS=" + targetDir},
+		})
 		if err == nil {
 			return
 		}
@@ -712,7 +713,7 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comma
 	commands = append(commands, cmd...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
-	if info, err := getContainerPS(quadlets); err == nil && len(info) > 0 {
+	if info, err := getContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
 		cmd := HandleSystemdStop(quadctl, quadlets, false)
 		commands = append(commands, cmd...)
 	}
@@ -871,11 +872,11 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
 				if volName := q.Sections["Volume"]["VolumeName"]; volName != nil {
 					fn = func() {
-						_ = runCommandSilently([]string{"podman", "volume", "rm", "-f", volName[0]})
+						_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", volName[0]})
 					}
 				} else {
 					fn = func() {
-						_ = runCommandSilently([]string{"podman", "volume", "rm", "-f", "systemd-" + q.ID})
+						_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", "systemd-" + q.ID})
 					}
 				}
 				funcs = append(funcs, fn)
@@ -886,11 +887,11 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
 				if networkName := q.Sections["Network"]["NetworkName"]; networkName != nil {
 					fn = func() {
-						_ = runCommandSilently([]string{"podman", "network", "rm", "-f", networkName[0]})
+						_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", networkName[0]})
 					}
 				} else {
 					fn = func() {
-						_ = runCommandSilently([]string{"podman", "network", "rm", "-f", "systemd-" + q.ID})
+						_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", "systemd-" + q.ID})
 					}
 				}
 				funcs = append(funcs, fn)
@@ -941,7 +942,7 @@ func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 			c.Cmd = args
 			commands = append(commands, c)
 		} else {
-			runCommand(args)
+			runCommand(quadctl.Runner, args)
 		}
 		return commands
 	} else {
@@ -995,7 +996,7 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 		c.Cmd = cmd
 		commands = append(commands, c)
 	} else {
-		runCommand(cmd)
+		runCommand(quadctl.Runner, cmd)
 	}
 	return commands
 }
@@ -1016,7 +1017,7 @@ func HandleSystemdReload(quadctl *util.Quadctl) []Command {
 
 func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
 
-	psInfo, err := getContainerPS(quadlets)
+	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
@@ -1051,7 +1052,7 @@ func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
 
 func HandleStats(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
 
-	psInfo, err := getContainerPS(quadlets)
+	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
@@ -1070,17 +1071,17 @@ func HandleStats(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
 		cmd = append(cmd, id)
 	}
 
-	_ = runCommand(cmd)
+	_ = runCommand(quadctl.Runner, cmd)
 }
 
-func HandleImages(quadlets []*util.Quadlet) {
+func HandleImages(runner util.Runner, quadlets []*util.Quadlet) {
 
 	//REPOSITORY                                 TAG         IMAGE ID      CREATED       SIZE
 	cmd := []string{"podman", "images", "--noheading", "--filter", "reference=ADD_ID_HERE", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Created}}|{{.Size}}"}
 	imageInfo := [][]string{}
 
 	// Fetch image info for each container
-	psInfo, err := getContainerPS(quadlets)
+	psInfo, err := getContainerPS(runner, quadlets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
@@ -1093,7 +1094,7 @@ func HandleImages(quadlets []*util.Quadlet) {
 				continue
 			}
 			cmd[4] = "reference=" + name
-			output, err := runCommandCapture(cmd)
+			output, err := runCommandCapture(runner, cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error fetching image info for container %s: %v\n", info[0], err)
 				continue
@@ -1123,7 +1124,7 @@ func HandleImages(quadlets []*util.Quadlet) {
 							continue
 						}
 						cmd[4] = "reference=" + name
-						output, err := runCommandCapture(cmd)
+						output, err := runCommandCapture(runner, cmd)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "Error fetching image info for quadlet %s: %v\n", q.ID, err)
 							continue
@@ -1150,7 +1151,7 @@ func HandleImages(quadlets []*util.Quadlet) {
 							continue
 						}
 						cmd[4] = "reference=" + name
-						output, err := runCommandCapture(cmd)
+						output, err := runCommandCapture(runner, cmd)
 						if err != nil {
 							resName, _ := res["name"].(string)
 							fmt.Fprintf(os.Stderr, "Error fetching image info for .kube %s container %s: %v\n", q.ID, resName, err)
@@ -1194,7 +1195,7 @@ func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 	var containerName string
 
 	// Fetch image info for each container
-	psInfo, err := getContainerPS(quadlets)
+	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return commands
@@ -1223,7 +1224,7 @@ func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		c.Cmd = cmd
 		commands = append(commands, c)
 	} else {
-		runCommand(cmd)
+		runCommand(quadctl.Runner, cmd)
 	}
 	return commands
 }
@@ -1701,7 +1702,7 @@ func getRawPodmanArgs(section map[string][]string) []string {
 	return args
 }
 
-func resourceExists(qType string, name string) bool {
+func resourceExists(runner util.Runner, qType string, name string) bool {
 	inspectCmd := []string{"podman"}
 	switch qType {
 	case ".container":
@@ -1715,12 +1716,12 @@ func resourceExists(qType string, name string) bool {
 	default:
 		return false
 	}
-	return runCommandSilently(inspectCmd) == nil
+	return runCommandSilently(runner, inspectCmd) == nil
 }
 
 func listSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}},{{.Path}},{{.UnitName}},{{.Status}}"}
-	output, err := runCommandCapture(cmd)
+	output, err := runCommandCapture(quadctl.Runner, cmd)
 	if err != nil {
 		// Older podman releases don't have the `quadlet list` subcommand. Fall back to
 		// querying each unit's state via systemctl instead of failing outright.
@@ -1765,7 +1766,7 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.Quadctl, quadlets []*util.Q
 			loadArgs = append(loadArgs, "--user")
 		}
 		loadArgs = append(loadArgs, "show", q.ServiceName, "--property=LoadState", "--value")
-		loadState, _ := runCommandCapture(loadArgs)
+		loadState, _ := runCommandCapture(quadctl.Runner, loadArgs)
 		loadState = strings.TrimSpace(loadState)
 		if loadState == "" || loadState == "not-found" {
 			continue
@@ -1776,7 +1777,7 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.Quadctl, quadlets []*util.Q
 			activeArgs = append(activeArgs, "--user")
 		}
 		activeArgs = append(activeArgs, "is-active", q.ServiceName)
-		output, _ := runCommandCapture(activeArgs)
+		output, _ := runCommandCapture(quadctl.Runner, activeArgs)
 		status := strings.TrimSpace(output)
 		if status == "" {
 			status = "unknown"
@@ -1786,9 +1787,9 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.Quadctl, quadlets []*util.Q
 	return info, nil
 }
 
-func getContainerPS(quadlets []*util.Quadlet) ([][]string, error) {
+func getContainerPS(runner util.Runner, quadlets []*util.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.PodName}}|{{.Status}}|{{.Ports}}|{{.Image}}|{{.Created}}"}
-	output, err := runCommandCapture(cmd)
+	output, err := runCommandCapture(runner, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -1828,7 +1829,7 @@ func displayListOfSystemdInstalledQuadlets(quadctl *util.Quadctl, quadlets []*ut
 	/*
 		//podman quadlet list --format "{{.Name}}|{{.UnitName}}|{{.Path}}|{{.Status}}\n"
 		cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}}|{{.UnitName}}|{{.Path}}|{{.Status}}"}
-		output, err := runCommandCapture(cmd)
+		output, err := runCommandCapture(quadctl.Runner, cmd)
 		if err != nil {
 			return err
 		}

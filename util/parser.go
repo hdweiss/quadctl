@@ -26,6 +26,7 @@ var (
 type Quadctl struct {
 	QuadletSchemas map[string]map[string]schema.SchemaOption
 	Config         map[string]string
+	Runner         Runner // Executes every external command; swapped for a fake in tests
 
 	IsRootful         bool
 	IsSystemd         bool

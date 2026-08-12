@@ -75,7 +75,7 @@ func main() {
 		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
 		}
-		HandleImages(quadlets)
+		HandleImages(quadctl.Runner, quadlets)
 	case "pull":
 		if quadctl.IsShowAll || len(quadlets) < 1 {
 			quadlets = util.InitAllQuadlets(quadctl)
@@ -129,6 +129,7 @@ func initState() {
 	quadctl = &util.Quadctl{
 		QuadletSchemas:    map[string]map[string]SchemaOption{},
 		Config:            map[string]string{},
+		Runner:            util.ExecRunner{},
 		IsRootful:         false,
 		IsSystemd:         false,
 		IsPrintOnly:       false,
