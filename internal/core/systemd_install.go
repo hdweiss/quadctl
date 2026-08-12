@@ -45,7 +45,7 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 		return nil, fmt.Errorf("quadlet path %s is not writable. Ensure the directory is writable and try again%s", targetDir, rootlessHint)
 	}
 
-	c := NewCommand(fmt.Sprintf("Systemd installing quadlets to %s", targetDir))
+	c := NewCommand(fmt.Sprintf("Installing quadlets to %s", targetDir))
 	if quadctl.IsVerbose {
 		c.PreFn = func(c *Command) {}
 		c.PostFn = func(c *Command) {}

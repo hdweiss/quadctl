@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,14 +24,29 @@ func HandleList(quadctl *util.State) error {
 			}
 		}
 		return listQuadlets(absPath, quadctl.ListDepth)
-	} else {
-		for _, path := range []string{quadctl.Config.QuadletSrcPath, quadctl.Config.QuadletRootPath, quadctl.Config.QuadletUserPath} {
-			if err := listQuadlets(path, quadctl.ListDepth); err != nil {
-				return fmt.Errorf("listing quadlets in %s: %w", path, err)
-			}
-		}
-		return nil
 	}
+
+	// -a walks all three configured paths. They used to be printed as three unlabelled trees
+	// with three identical error messages, so there was nothing to say which was which
+	// (TODO.md section 4).
+	paths := []struct{ role, path string }{
+		{"source (quadlet.src.path)", quadctl.Config.QuadletSrcPath},
+		{"systemd, rootful (quadlet.root.path)", quadctl.Config.QuadletRootPath},
+		{"systemd, rootless (quadlet.user.path)", quadctl.Config.QuadletUserPath},
+	}
+	var failed []error
+	for _, p := range paths {
+		fmt.Printf("\n%s\n", p.role)
+		if err := listQuadlets(p.path, quadctl.ListDepth); err != nil {
+			// One unreadable path shouldn't hide the other two, so report it and carry on.
+			fmt.Fprintf(os.Stderr, "  %v\n", err)
+			failed = append(failed, err)
+		}
+	}
+	if len(failed) == len(paths) {
+		return fmt.Errorf("none of the configured quadlet paths could be listed: %w", errors.Join(failed...))
+	}
+	return nil
 }
 
 func listQuadlets(absPath string, depth int) error {

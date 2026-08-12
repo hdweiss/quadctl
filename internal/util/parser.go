@@ -43,8 +43,12 @@ type State struct {
 	// whose quadctl.ini sets systemd.enabled=true, since the config is read after the flags.
 	IsNoSystemd bool
 
-	IsPrintOnly  bool
-	IsVerbose    bool
+	IsPrintOnly bool
+	IsVerbose   bool
+	// IsNoColor is --no-color. NO_COLOR in the environment and a non-terminal stdout have
+	// the same effect; see core.UseColor.
+	IsNoColor bool
+
 	IsFile       bool
 	ListDepth    int
 	IsListAll    bool

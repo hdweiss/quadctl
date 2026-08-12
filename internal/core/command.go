@@ -7,16 +7,12 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/briandowns/spinner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
-
-// WarnPrefix marks a warning that is shown even without -v, because it reports that part of
-// the user's quadlet file was silently ignored rather than merely commenting on execution.
-// Warnings without it stay behind -v.
-const WarnPrefix = "[WARN] "
 
 type Command struct {
 	Label    string
@@ -31,6 +27,9 @@ type Command struct {
 	// Runner executes Cmd. RunCommands fills it in from the run state before running, so
 	// handlers that build a Command don't have to carry one around.
 	Runner util.Runner
+	// ShowSpinner is set by RunCommands from the run state: a spinner redraws its own line,
+	// which only means anything on a terminal.
+	ShowSpinner bool
 }
 
 func (c *Command) PreCmd() {
@@ -68,9 +67,13 @@ func DefaultPreFn(c *Command) {
 	if isForegroundRun(c.Cmd) {
 		return // Skip spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
 	}
+	if !c.ShowSpinner {
+		return
+	}
 	c.Spinner = spinner.New(spinner.CharSets[14], 100*time.Millisecond) // Build our new spinner
 	c.Spinner.Prefix = c.Label + " "
 	c.Spinner.Start() // Start the spinner
+	setActiveSpinner(c.Spinner)
 }
 
 func DefaultRunFn(c *Command) {
@@ -93,12 +96,46 @@ func DefaultPostFn(c *Command) {
 	if isForegroundRun(c.Cmd) {
 		return // Skip stopping the spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
 	}
+	outcome := "Done"
 	if c.Error != nil {
-		c.Spinner.FinalMSG = fmt.Sprintf("%s... Failed\n", c.Label)
-	} else {
-		c.Spinner.FinalMSG = fmt.Sprintf("%s... Done\n", c.Label)
+		outcome = "Failed"
 	}
+	// Without a spinner - piped output, or print mode - the line the spinner would have
+	// replaced still has to be written, or the run says nothing at all about what it did.
+	if c.Spinner == nil {
+		fmt.Printf("%s... %s\n", c.Label, outcome)
+		return
+	}
+	c.Spinner.FinalMSG = fmt.Sprintf("%s... %s\n", c.Label, outcome)
 	c.Spinner.Stop()
+	setActiveSpinner(nil)
+}
+
+// The spinner runs on its own goroutine and owns the terminal line it is drawing on, so a
+// signal arriving mid-command has to stop it before anything else prints - otherwise the
+// process exits with a half-drawn animation as the last thing on screen. Only one command
+// runs at a time, so one pointer is enough.
+var (
+	activeSpinnerMu sync.Mutex
+	activeSpinner   *spinner.Spinner
+)
+
+func setActiveSpinner(s *spinner.Spinner) {
+	activeSpinnerMu.Lock()
+	defer activeSpinnerMu.Unlock()
+	activeSpinner = s
+}
+
+// StopSpinner tears down whatever spinner is currently running, if any. Safe to call from a
+// signal handler, and safe to call when nothing is spinning.
+func StopSpinner() {
+	activeSpinnerMu.Lock()
+	defer activeSpinnerMu.Unlock()
+	if activeSpinner != nil {
+		activeSpinner.FinalMSG = ""
+		activeSpinner.Stop()
+		activeSpinner = nil
+	}
 }
 
 // abortingSubcommands are the subcommands where a failed command makes the ones after it
@@ -119,6 +156,44 @@ func exitCodeFor(err error) int {
 	return 1
 }
 
+// printWarnings reports what the generators had to say about the commands they built, before
+// any of them runs.
+//
+// Two things used to be wrong here. Warnings were shown only with -v, so a quadlet option
+// quadctl could not use vanished without a trace - the exact failure mode that made Phase 0
+// necessary. And several messages carried their own newlines and leading spaces, so the block
+// came out with ragged indentation and stray blank lines.
+//
+// Warnings still print up front rather than beside the command they belong to: a spinner
+// redraws its own line, so anything interleaved with one is liable to be overwritten, and a
+// problem worth knowing about is worth knowing before the first command runs. Each line names
+// the command it came from instead, which is what the ordering was standing in for.
+func printWarnings(quadctl *util.State, commands []Command) {
+	printed := false
+	for _, c := range commands {
+		for _, w := range c.Warnings {
+			// Contains, not HasPrefix: handlers prepend the source file name to the warnings
+			// the generators hand back.
+			if !quadctl.IsVerbose && strings.Contains(w, InfoPrefix) {
+				continue
+			}
+			// Messages arrive with assorted leading spaces and trailing newlines of their own.
+			w = strings.TrimSpace(strings.Join(strings.Fields(w), " "))
+			if w == "" {
+				continue
+			}
+			if !printed {
+				fmt.Fprintf(os.Stderr, "\n# --- WARNINGS ---\n\n")
+				printed = true
+			}
+			fmt.Fprintf(os.Stderr, "  %s: %s\n", c.Label, w)
+		}
+	}
+	if printed {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
 // Common handling for dry run / verbose output and command execution for all handlers that
 // generate commands. Returns the exit code quadctl should terminate with: 0 when every
 // command succeeded, otherwise the status of the last command that failed.
@@ -126,23 +201,7 @@ func RunCommands(quadctl *util.State, commands []Command) int {
 
 	exitCode := 0
 
-	isHeaderPrinted := false
-	for _, c := range commands {
-		for _, w := range c.Warnings {
-			// Without -v, only warnings about input that was dropped are worth interrupting
-			// for; the rest is commentary on how the command was built.
-			// Contains, not HasPrefix: handlers prepend the source file name to the
-			// warnings the generators hand back.
-			if !quadctl.IsVerbose && !strings.Contains(w, WarnPrefix) {
-				continue
-			}
-			if !isHeaderPrinted {
-				fmt.Fprintf(os.Stderr, "\n# --- WARNINGS ---\n\n")
-				isHeaderPrinted = true
-			}
-			fmt.Fprintf(os.Stderr, " => %s\n", w)
-		}
-	}
+	printWarnings(quadctl, commands)
 	if quadctl.IsPrintOnly && len(commands) > 0 {
 		fmt.Printf("\n# --- Print MODE: Commands that would be executed ---\n\n")
 		for _, c := range commands {
@@ -156,8 +215,10 @@ func RunCommands(quadctl *util.State, commands []Command) int {
 			}
 		}
 	} else if len(commands) > 0 {
+		spin := useSpinner(quadctl)
 		for i, c := range commands {
 			c.Runner = quadctl.Runner
+			c.ShowSpinner = spin
 			c.PreCmd()
 			c.RunCmd()
 			c.PostCmd()

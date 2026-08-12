@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/fkmiec/quadctl/internal/util"
 )
@@ -17,8 +16,8 @@ func HandleCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 
 		// For .kube, podman kube play will be called in start step. Return a no-op command with a warning here if verbose output is enabled.
 		if q.Type == ".kube" && quadctl.IsVerbose {
-			cmd := NewCommand(fmt.Sprintf("Creating %s %s", q.Type, q.ID))
-			cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("Podman kube play handles creation. Nothing to do for %s %s", q.Type, q.ID))
+			cmd := NewCommand(quadletLabel("Creating", q))
+			cmd.Warnings = append(cmd.Warnings, InfoPrefix+fmt.Sprintf("podman kube play handles creation; nothing to do for %s", q.DisplayName()))
 			cmd.Cmd = []string{"echo"}
 			commands = append(commands, cmd)
 			continue
@@ -34,29 +33,27 @@ func HandleCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 				continue
 			}
 			args, warns := generateCreateCommand(quadctl, q)
-			cmd := NewCommand(fmt.Sprintf("Creating %s %s", q.Type, q.ID))
+			cmd := NewCommand(quadletLabel("Creating", q))
 			cmd.Cmd = args
 
-			for _, w := range warns {
-				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("%s: %s", filepath.Base(q.Filepath), w))
-			}
+			cmd.Warnings = append(cmd.Warnings, warns...)
 
 			// Warn about restart policy configuration, if applicable
 			if q.RestartPolicy != "" && q.RestartPolicy != "no" {
-				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("[INFO] %s: Restart policy configured (%s). Ensure podman-restart.service is enabled.\n", q.Filepath, q.RestartPolicy))
+				cmd.Warnings = append(cmd.Warnings, InfoPrefix+fmt.Sprintf("restart policy configured (%s); ensure podman-restart.service is enabled", q.RestartPolicy))
 			}
 			// Warn about AutoUpdate configuration, if applicable
 			if q.AutoUpdate != "" {
-				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf("[INFO] %s: Image AutoUpdate enabled (%s)\n", q.Filepath, q.AutoUpdate))
+				cmd.Warnings = append(cmd.Warnings, InfoPrefix+fmt.Sprintf("image AutoUpdate enabled (%s)", q.AutoUpdate))
 			}
 
 			commands = append(commands, cmd)
 
 		} else {
 			if quadctl.IsVerbose {
-				cmd := NewCommand(fmt.Sprintf("Creating %s %s", q.Type, q.ID))
+				cmd := NewCommand(quadletLabel("Creating", q))
 				cmd.Cmd = []string{"echo"}
-				cmd.Warnings = append(cmd.Warnings, fmt.Sprintf(" [INFO] %s %s already exists. To force re-creation of ALL resources, run 'quadctl remove' first.\n", q.Type, q.ID))
+				cmd.Warnings = append(cmd.Warnings, InfoPrefix+"already exists; run 'quadctl remove' first to force re-creation of all resources")
 				commands = append(commands, cmd)
 			}
 		}

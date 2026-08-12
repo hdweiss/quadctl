@@ -18,7 +18,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 	for sec := range q.Sections {
 		// standard systemd sections not used in CLI calls
 		if sec == "Install" || sec == "Unit" {
-			warnings = append(warnings, fmt.Sprintf("Ignoring [%s] section (Systemd specific)", sec))
+			warnings = append(warnings, InfoPrefix+fmt.Sprintf("ignoring [%s] section (systemd only)", sec))
 		}
 	}
 
@@ -27,7 +27,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		//Get the schema for the volume type and use the PodmanTemplateParsed to format the podman option.
 		options, ok := quadctl.QuadletSchemas["volume"]
 		if !ok {
-			warnings = append(warnings, "No volume schema found.")
+			warnings = append(warnings, "no volume schema found")
 			return cmd, warnings
 		}
 		cmd = append(cmd, "podman", "volume", "create")
@@ -64,7 +64,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		//Get the schema for the network type and use the PodmanTemplateParsed to format the podman option.
 		options, ok := quadctl.QuadletSchemas["network"]
 		if !ok {
-			warnings = append(warnings, "No network schema found.")
+			warnings = append(warnings, "no network schema found")
 			return cmd, warnings
 		}
 		cmd = append(cmd, "podman", "network", "create")
@@ -99,7 +99,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		//Get the schema
 		options, ok := quadctl.QuadletSchemas["pod"]
 		if !ok {
-			warnings = append(warnings, "No pod schema found.")
+			warnings = append(warnings, "no pod schema found")
 			return cmd, warnings
 		}
 
@@ -133,7 +133,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 		//Get the schema
 		options, ok := quadctl.QuadletSchemas["container"]
 		if !ok {
-			warnings = append(warnings, "No container schema found.")
+			warnings = append(warnings, "no container schema found")
 			return cmd, warnings
 		}
 
@@ -162,7 +162,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 			cmd = append(cmd, configuredPodmanArgs...)
 			for _, k := range slices.Sorted(maps.Keys(contSec)) {
 				if _, ok := options[k]; !ok {
-					warnings = append(warnings, fmt.Sprintf("Quadlet container option not defined: %s", k))
+					warnings = append(warnings, fmt.Sprintf("no such quadlet container option: %s", k))
 					continue
 				}
 				vals := util.OptionValues(options, k, contSec[k])
@@ -210,7 +210,7 @@ func generateCreateCommand(quadctl *util.State, q *util.Quadlet) ([]string, []st
 			}
 		}
 		if image == "" {
-			warnings = append(warnings, "No Image= specified in [Container]")
+			warnings = append(warnings, "no Image= specified in [Container]")
 			image = "<MISSING_IMAGE>"
 		}
 		cmd = append(cmd, image)
@@ -233,7 +233,7 @@ func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []s
 		//Get the schema for the kube type and use the PodmanTemplateParsed to format the podman option.
 		options, ok := quadctl.QuadletSchemas["kube"]
 		if !ok {
-			warnings = append(warnings, "No kube schema found.")
+			warnings = append(warnings, "no kube schema found")
 			return cmd, warnings
 		}
 
@@ -283,7 +283,7 @@ func generateStartupCommand(quadctl *util.State, q *util.Quadlet) ([]string, []s
 			cmd = append(cmd, "podman", "container", "start", resName)
 		}
 	} else if q.Type == ".container" {
-		warnings = append(warnings, fmt.Sprintf(" [INFO] Container %s belongs to pod %s, it will start with the pod.\n", resName, q.ParentPod))
+		warnings = append(warnings, InfoPrefix+fmt.Sprintf("container %s belongs to pod %s and starts with it", resName, q.ParentPod))
 	}
 
 	return cmd, warnings
@@ -302,7 +302,7 @@ func generateRunCommand(quadctl *util.State, q *util.Quadlet) ([]string, []strin
 	// schema, unhandled type), so there's nothing to strip the 'podman container create'
 	// prefix from.
 	if len(createCmd) < 3 {
-		warnings = append(warnings, fmt.Sprintf("%sCould not generate a run command for %s", WarnPrefix, q.ID))
+		warnings = append(warnings, fmt.Sprintf("could not generate a run command for %s", q.ID))
 		return nil, warnings
 	}
 	runCmd := []string{"podman", "run"}

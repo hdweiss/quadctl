@@ -308,26 +308,36 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 ## 4. Output & UX
 
-- [ ] **Scope silently widens from "this directory" to "everything".**
-  `ps`, `stats`, `images`, `status`, `pull`, `logs` fall back to `InitAllQuadlets` when the
-  CWD has no quadlets (`main.go:46-83`) with no indication. `quadctl pull` run from an
-  unrelated directory will happily pull every image of every quadlet on the system. At
-  minimum print `No quadlets in <dir> — showing all quadlets under <src.path>`.
+- [x] **Scope silently widens from "this directory" to "everything".**
+  `ps`, `stats`, `images`, `status`, `pull`, `logs` fell back to `InitAllQuadlets` when the
+  CWD had no quadlets, with no indication, so `quadctl pull` run from an unrelated directory
+  would happily pull every image of every quadlet on the system.
+  *Fixed by `PLAN.md` Phase 4:* `main` says which directories it is about to use, whether the
+  widening came from `-a` or from an empty directory.
 
-- [ ] **`quadctl create` prints nothing at all when everything already exists** — no
-  commands are generated, so `RunCommands` is never called (`main.go:122`). Say something
-  ("all resources already exist").
+- [x] **`quadctl create` prints nothing at all when everything already exists** — no
+  commands are generated, so `RunCommands` was never called. *Fixed by `PLAN.md` Phase 4:*
+  each subcommand that builds commands carries a `NothingToDo` line in the registry, printed
+  when it built none.
 
-- [ ] **Warnings are hidden by default and formatted raggedly.** They only appear with `-v`
-  (`core/commands.go:100-113`), are printed *before* the commands they belong to, and
-  several messages embed their own `\n` and leading spaces (`core/handlers.go:89`, `:102`,
-  `:1612`) so the block comes out with inconsistent blank lines and indentation. Dropping
-  a user's `Exec=` (see §1) should be a visible warning at default verbosity.
+- [x] **Warnings are hidden by default and formatted raggedly.** They only appeared with
+  `-v`, were printed *before* the commands they belong to, and several messages embedded
+  their own `\n` and leading spaces so the block came out with inconsistent blank lines and
+  indentation.
+  *Fixed by `PLAN.md` Phase 4:* the default flipped. Anything reporting that quadctl could
+  not use part of a quadlet file is shown at default verbosity; commentary on how a command
+  was built carries `core.InfoPrefix` and stays behind `-v`. Each line is flattened onto one
+  line and prefixed with the command it belongs to.
+  **Deliberately not changed:** warnings still print as a block before the first command
+  runs, rather than beside it. A spinner redraws its own line, so anything interleaved with
+  one is liable to be overwritten — naming the command on each line addresses what the
+  ordering was standing in for.
 
-- [ ] **ANSI colour is emitted unconditionally**, including when stdout is a pipe or file —
-  every table uses `table.StyleColoredYellowWhiteOnBlack` (`core/handlers.go:1048`, `:1179`,
-  `:1824`) and the spinner runs regardless of TTY. Support `NO_COLOR`/`--no-color` and
-  detect a non-TTY.
+- [x] **ANSI colour is emitted unconditionally**, including when stdout is a pipe or file —
+  every table used `table.StyleColoredYellowWhiteOnBlack` and the spinner ran regardless of
+  TTY. *Fixed by `PLAN.md` Phase 4:* `core.UseColor` honours `--no-color`, `NO_COLOR` and
+  `TERM=dumb`, and otherwise only colours a terminal; the spinner runs only on a terminal,
+  and prints its outcome line plainly when there isn't one.
 
 - [x] **Fatal errors inside a running spinner leave it mid-animation.**
   `HandleSystemdCreate`'s file operations `os.Exit(1)` from inside `RunFn` while the spinner
@@ -335,30 +345,37 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `validateQuadletGenerationCommand` documents this exact problem and works around it
   locally (`:616-618`) instead of fixing it globally.
   *Fixed by `PLAN.md` 1.2:* those file operations and the generator validation now report a
-  failed command instead of exiting, so the spinner is always torn down. **Still open:**
-  Ctrl-C has no signal handler (`PLAN.md` Phase 4, Output).
+  failed command instead of exiting, so the spinner is always torn down. Ctrl-C is handled
+  too as of `PLAN.md` Phase 4: `main.handleInterrupts` stops the spinner, removes the scratch
+  directories and exits 130.
 
-- [ ] **`quadctl logs` with nothing running runs `podman logs` with no arguments.** **[verified]**
-  Output: `Error: specify at least one container name or ID to log`, exit 0
-  (`core/handlers.go:1183-1222`). Should say "no containers found for these quadlets".
+- [x] **`quadctl logs` with nothing running runs `podman logs` with no arguments.** **[verified]**
+  Output: `Error: specify at least one container name or ID to log`, exit 0.
+  *Fixed by `PLAN.md` Phase 4:* it says no containers were found and stops.
 
-- [ ] **`stats` exits 1 when nothing matches while `ps` prints an empty table** for exactly
-  the same situation (`core/handlers.go:1060`). Pick one behavior.
+- [x] **`stats` exits 1 when nothing matches while `ps` prints an empty table** for exactly
+  the same situation. *Fixed by `PLAN.md` Phase 4:* `ps`, `stats`, `images` and `logs` all
+  report "No containers found for the quadlets in \<dir\>" and exit 0.
 
-- [ ] **Selector error message misattributes the failure** (`main.go:36`): prints
+- [x] **Selector error message misattributes the failure** (`main.go:36`): printed
   "No quadlets found in directory: `<SearchDir>`" even when the real error came from
-  reading `quadlet.src.path`.
+  reading `quadlet.src.path`. *Fixed by `PLAN.md` Phase 4:* the selector's own error is
+  wrapped rather than replaced.
 
-- [ ] **`list -a` prints three unlabeled trees** (`core/handlers.go:1237-1252`) — nothing
-  says which is src / user / root, and the three identical error messages all read
-  "Error listing quadlets in search directory".
+- [x] **`list -a` prints three unlabeled trees** (`core/handlers.go:1237-1252`) — nothing
+  said which was src / user / root, and the three identical error messages all read
+  "Error listing quadlets in search directory". *Fixed by `PLAN.md` Phase 4:* each tree is
+  headed with its role and config key, one unreadable path no longer hides the other two,
+  and only all three failing is an error.
 
-- [ ] **Inconsistent labels and naming in output**: "Systemd stopping .container app" vs
+- [x] **Inconsistent labels and naming in output**: "Systemd stopping .container app" vs
   "Starting .container app" vs "Systemd installing quadlets to …"; the raw dotted type
-  (`.container`) is printed as if it were a word. Normalize to something like
-  `Starting container app`.
+  (`.container`) was printed as if it were a word. *Fixed by `PLAN.md` Phase 4:*
+  `core.label` builds every one of them, so they all read `Starting container app`. The
+  systemd variants name the unit systemctl acts on rather than the podman resource.
 
-- [ ] **Command generation is nondeterministic.** **[verified]** Map iteration in
+- [x] **Command generation is nondeterministic.** **[verified]** *Fixed by `PLAN.md` 1.3.*
+  Map iteration in
   `generateCreateCommand` (`core/handlers.go:1474`) and in `topologicalSort`'s seed loop
   (`util/parser.go:631`) reorders both the podman arguments and independent quadlets
   between runs:
@@ -369,9 +386,10 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   Makes `-p` output undiffable and start ordering unstable. Sort keys (and sort the
   topological seed by ID) for stable output.
 
-- [ ] **No preflight check for `podman` / `systemctl`.** Missing binaries surface as
-  `exec: "podman": executable file not found in $PATH` from whichever code path happens to
-  run first. One `exec.LookPath` check with a clear message would do.
+- [x] **No preflight check for `podman` / `systemctl`.** Missing binaries surfaced as
+  `exec: "podman": executable file not found in $PATH` from whichever code path happened to
+  run first. *Fixed by `PLAN.md` Phase 4:* `main.checkRequiredBinaries` looks them up before
+  dispatch — `systemctl` only under `-s`, and neither in print mode, which runs nothing.
 
 - [ ] **No `--version`.** Release binaries carry no version at all
   (`.github/workflows/build_release.yml` has no `-ldflags -X`), so bug reports can't

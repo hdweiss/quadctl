@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -15,7 +13,7 @@ func HandleStop(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error
 		q := quadlets[i]
 		cmd := generateStopCommand(quadctl, q)
 		if len(cmd) > 0 {
-			c := NewCommand(fmt.Sprintf("Stopping %s %s", q.Type, q.DisplayName()))
+			c := NewCommand(quadletLabel("Stopping", q))
 			c.Cmd = cmd
 			commands = append(commands, c)
 		}

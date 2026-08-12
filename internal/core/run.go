@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 
 	"github.com/fkmiec/quadctl/internal/util"
@@ -49,14 +48,10 @@ func HandleRun(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error)
 		}
 		// For 'run' command, we need to generate 'podman run' commands instead of 'podman start' for containers.
 		cmd, warns := generateRunCommand(quadctl, q)
-		warnings := []string{}
-		for _, w := range warns {
-			warnings = append(warnings, fmt.Sprintf("%s: %s\n", filepath.Base(q.Filepath), w))
-		}
 		if len(cmd) > 0 {
-			command := NewCommand(fmt.Sprintf("Running %s %s", q.Type, q.DisplayName()))
+			command := NewCommand(quadletLabel("Running", q))
 			command.Cmd = cmd
-			command.Warnings = warnings
+			command.Warnings = warns
 
 			if foregroundQuadlet != nil && q.ID == foregroundQuadlet.ID {
 				foregroundQuadletCommand = command

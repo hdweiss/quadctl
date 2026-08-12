@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/fkmiec/quadctl/internal/util"
@@ -36,7 +35,7 @@ func HandleStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, erro
 		cmd, warns := generateStartupCommand(quadctl, q)
 
 		if len(cmd) > 0 {
-			c := NewCommand(fmt.Sprintf("Starting %s %s", q.Type, q.DisplayName()))
+			c := NewCommand(quadletLabel("Starting", q))
 			c.Cmd = cmd
 			c.Warnings = warns
 			commands = append(commands, c)

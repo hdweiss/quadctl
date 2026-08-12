@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/fkmiec/quadctl/internal/core"
 	"github.com/fkmiec/quadctl/internal/schema"
@@ -34,6 +37,7 @@ func run() int {
 	// The scratch directories a .quadlets bundle is extracted into are read by the systemd
 	// install commands, so they can only go once every command has run.
 	defer quadctl.Cleanup()
+	handleInterrupts(quadctl)
 
 	registry := newRegistry(quadctl)
 	if err := registry.parseGlobalFlags(os.Args[1:]); err != nil {
@@ -68,8 +72,11 @@ func run() int {
 	// Nothing to act on and nothing to report on: the user probably didn't notice they were
 	// neither in a quadlet directory nor named one. Offer the ones under quadlet.src.path.
 	if len(quadlets) < 1 && cmd.NeedsQuadlets {
+		// The selector's own failure - an unreadable quadlet.src.path, no directories under
+		// it, a cancelled prompt - used to be reported as "no quadlets found in <SearchDir>",
+		// which names the wrong directory and the wrong problem (TODO.md section 4).
 		if err := displayQuadletSelector(quadctl); err != nil {
-			return fail(fmt.Errorf("no quadlets found in directory: %s", quadctl.SearchDir))
+			return fail(fmt.Errorf("no quadlets in %s, and no other directory to offer: %w", quadctl.SearchDir, err))
 		}
 		if quadlets, err = util.InitQuadlets(quadctl); err != nil {
 			return fail(err)
@@ -79,10 +86,24 @@ func run() int {
 	// Several subcommands report on every quadlet under quadlet.src.path rather than just
 	// the current directory: on -a/--all, or when the current directory turned up nothing.
 	// 'logs' widens only in the latter case - it has no -a.
-	if (cmd.WidensOnAll && quadctl.IsShowAll) || (cmd.WidensWhenEmpty && len(quadlets) < 1) {
+	widenedBecauseEmpty := cmd.WidensWhenEmpty && len(quadlets) < 1
+	if (cmd.WidensOnAll && quadctl.IsShowAll) || widenedBecauseEmpty {
+		// Say so. Widening used to be silent, so 'quadctl pull' run from an unrelated
+		// directory would quietly pull every image of every quadlet on the machine
+		// (TODO.md section 4).
+		if widenedBecauseEmpty {
+			fmt.Fprintf(os.Stderr, "No quadlets in %s - using all quadlets under %s.\n",
+				quadctl.SearchDir, quadctl.Config.QuadletSrcPath)
+		} else {
+			fmt.Fprintf(os.Stderr, "Using all quadlets under %s.\n", quadctl.Config.QuadletSrcPath)
+		}
 		if quadlets, err = util.InitAllQuadlets(quadctl); err != nil {
 			return fail(err)
 		}
+	}
+
+	if err := checkRequiredBinaries(quadctl); err != nil {
+		return fail(err)
 	}
 
 	commands, err := cmd.dispatch(quadctl, quadlets)
@@ -90,11 +111,54 @@ func run() int {
 		return fail(err)
 	}
 
-	if len(commands) > 0 {
-		return core.RunCommands(quadctl, commands)
+	if len(commands) == 0 {
+		// A subcommand that builds commands and built none did nothing, which is worth a word:
+		// 'quadctl create' with everything already in place used to print absolutely nothing
+		// (TODO.md section 4). The handlers that report rather than build - ps, images, list -
+		// have already printed, so they are not it.
+		if cmd.NothingToDo != "" {
+			fmt.Fprintf(os.Stderr, "Nothing to do: %s\n", cmd.NothingToDo)
+		}
+		return 0
 	}
 
-	return 0
+	return core.RunCommands(quadctl, commands)
+}
+
+// handleInterrupts tears down cleanly on Ctrl-C. It lives in main because it has to exit, and
+// main is the only place allowed to: the spinner has to stop before anything else prints, and
+// the scratch directories have to go, neither of which a default signal disposition would do.
+func handleInterrupts(quadctl *util.State) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-ch
+		core.StopSpinner()
+		fmt.Fprintf(os.Stderr, "\nInterrupted (%s).\n", sig)
+		quadctl.Cleanup()
+		// 128 + SIGINT, the shell convention for "killed by a signal".
+		os.Exit(130)
+	}()
+}
+
+// checkRequiredBinaries fails early, and with a sentence about what is missing, rather than
+// letting whichever code path happens to run first surface
+// `exec: "podman": executable file not found in $PATH` (TODO.md section 4). Print mode runs
+// nothing, so it needs neither binary.
+func checkRequiredBinaries(quadctl *util.State) error {
+	if quadctl.IsPrintOnly {
+		return nil
+	}
+	required := []string{"podman"}
+	if quadctl.IsSystemd {
+		required = append(required, "systemctl")
+	}
+	for _, bin := range required {
+		if _, err := exec.LookPath(bin); err != nil {
+			return fmt.Errorf("%s is required but was not found in $PATH", bin)
+		}
+	}
+	return nil
 }
 
 // resolveSystemdMode settles whether this run goes through systemd. The config is read after

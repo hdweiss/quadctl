@@ -71,6 +71,11 @@ var (
 		Usage:    "Manage services with podman directly, overriding systemd.enabled in quadctl.ini",
 		register: boolFlag(func(q *util.State) *bool { return &q.IsNoSystemd }),
 	}
+	flagNoColor = flagSpec{
+		Name: "no-color", Default: "false",
+		Usage:    "Disable ANSI colour, as NO_COLOR in the environment does",
+		register: boolFlag(func(q *util.State) *bool { return &q.IsNoColor }),
+	}
 	flagFile = flagSpec{
 		Name: "file", Short: "f", Default: "false",
 		Usage:    "Treat the given path as a single quadlet file rather than a directory",
@@ -122,7 +127,7 @@ var (
 
 // globalFlags are accepted before the subcommand and are also registered on every
 // subcommand's flag set, so 'quadctl -s start' and 'quadctl start -s' both work.
-var globalFlags = []flagSpec{flagSystemd, flagNoSystemd}
+var globalFlags = []flagSpec{flagSystemd, flagNoSystemd, flagNoColor}
 
 // --- SUBCOMMAND TABLE ---
 
@@ -146,6 +151,10 @@ type subcommand struct {
 
 	// Wrapper lists the subcommand under "Wrapper commands" in the top-level usage.
 	Wrapper bool
+	// NothingToDo is what to say when the subcommand generated no commands at all. Leave it
+	// empty for the subcommands that report rather than build - ps, images, list, status -
+	// since those have already printed by the time they return nothing.
+	NothingToDo string
 	// NeedsQuadlets makes an empty search directory an error worth prompting about: without
 	// quadlets there is nothing for these to act on.
 	NeedsQuadlets bool
@@ -163,6 +172,7 @@ func commands() []*subcommand {
 	return []*subcommand{
 		{
 			Name:            "pull",
+			NothingToDo:     "no images to pull for these quadlets",
 			Summary:         "Pull required images",
 			Synopsis:        "Pull images defined in quadlet files.",
 			Flags:           []flagSpec{flagFile, flagPrint, flagAll},
@@ -175,6 +185,7 @@ func commands() []*subcommand {
 		},
 		{
 			Name:          "create",
+			NothingToDo:   "every resource these quadlets describe already exists",
 			Summary:       "Create resources (do not start). Use -s to generate quadlets under systemd.",
 			Synopsis:      "Create resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPrint, flagVerbose},
@@ -188,6 +199,7 @@ func commands() []*subcommand {
 		},
 		{
 			Name:          "start",
+			NothingToDo:   "these quadlets describe nothing that can be started",
 			Summary:       "Create (if missing) and start resources. Use -s to start under systemd.",
 			Synopsis:      "Start resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPrint, flagVerbose},
@@ -201,6 +213,7 @@ func commands() []*subcommand {
 		},
 		{
 			Name:          "run",
+			NothingToDo:   "these quadlets describe nothing that can be run",
 			Summary:       "Run a single .container in the foreground. Not supported under systemd.",
 			Synopsis:      "Run resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:         []flagSpec{flagFile, flagPodmanArgs, flagExec, flagPrint, flagVerbose},
@@ -217,11 +230,12 @@ func commands() []*subcommand {
 			},
 		},
 		{
-			Name:     "stop",
-			Summary:  "Stop running services (do not remove). Use -s to stop under systemd.",
-			Synopsis: "Stop resources (pod, container, volume, network) defined in quadlet files.",
-			Flags:    []flagSpec{flagFile, flagPrint, flagVerbose},
-			Run:      core.HandleStop,
+			Name:        "stop",
+			NothingToDo: "these quadlets describe nothing that can be stopped",
+			Summary:     "Stop running services (do not remove). Use -s to stop under systemd.",
+			Synopsis:    "Stop resources (pod, container, volume, network) defined in quadlet files.",
+			Flags:       []flagSpec{flagFile, flagPrint, flagVerbose},
+			Run:         core.HandleStop,
 			RunSystemd: func(q *util.State, qs []*util.Quadlet) ([]core.Command, error) {
 				return core.HandleSystemdStop(q, qs, false)
 			},
@@ -233,6 +247,7 @@ func commands() []*subcommand {
 		},
 		{
 			Name:          "remove",
+			NothingToDo:   "these quadlets describe nothing to remove",
 			Aliases:       []string{"rm"},
 			Summary:       "Remove stopped resources. Use -s to remove generated quadlets under systemd.",
 			Synopsis:      "Remove resources (pod, container, volume, network) defined in quadlet files.",
@@ -284,7 +299,7 @@ func commands() []*subcommand {
 			Synopsis: "List images defined in quadlet files.",
 			Flags:    []flagSpec{flagFile, flagAll},
 			Run: func(quadctl *util.State, quadlets []*util.Quadlet) ([]core.Command, error) {
-				return nil, core.HandleImages(quadctl.Runner, quadlets)
+				return nil, core.HandleImages(quadctl, quadlets)
 			},
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,

@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -33,7 +31,7 @@ func HandleRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, err
 			rmCmd = append(rmCmd, "volume", "rm", resName)
 		}
 
-		c := NewCommand(fmt.Sprintf("Removing %s %s", q.Type, resName))
+		c := NewCommand(quadletLabel("Removing", q))
 		c.Cmd = rmCmd
 		commands = append(commands, c)
 	}

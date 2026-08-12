@@ -48,7 +48,7 @@ func HandleSystemdStart(quadctl *util.State, quadlets []*util.Quadlet) ([]Comman
 		if (q.Type == ".container" && q.ParentPod == "") || q.Type == ".pod" || q.Type == ".kube" {
 			args := util.ParseFields(buf.String())
 			args = append(args, q.ServiceName)
-			cmd := NewCommand(fmt.Sprintf("Starting %s %s", q.Type, q.ID))
+			cmd := NewCommand(unitLabel("Starting", q))
 			cmd.Cmd = args
 			commands = append(commands, cmd)
 		}
@@ -86,7 +86,7 @@ func HandleSystemdStop(quadctl *util.State, quadlets []*util.Quadlet, stopNetAnd
 		if len(args) == 0 {
 			continue
 		}
-		cmd := NewCommand(fmt.Sprintf("Systemd stopping %s %s", q.Type, q.ID))
+		cmd := NewCommand(unitLabel("Stopping", q))
 		cmd.Cmd = args
 		commands = append(commands, cmd)
 	}
@@ -211,7 +211,7 @@ func displayListOfSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util
 			})
 		}
 	}
-	t.SetStyle(table.StyleColoredYellowWhiteOnBlack)
+	t.SetStyle(tableStyle(quadctl))
 	t.Render()
 	return nil
 }

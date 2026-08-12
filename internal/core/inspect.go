@@ -18,6 +18,11 @@ func HandlePS(quadctl *util.State, quadlets []*util.Quadlet) error {
 		return err
 	}
 
+	if len(psInfo) == 0 {
+		fmt.Fprintf(os.Stderr, "No containers found for the quadlets in %s.\n", quadctl.SearchDir)
+		return nil
+	}
+
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.AppendHeader(table.Row{"CONTAINER ID", "NAME", "POD", "STATE", "PORTS", "IMAGE", "CREATED"})
@@ -41,7 +46,7 @@ func HandlePS(quadctl *util.State, quadlets []*util.Quadlet) error {
 			})
 		}
 	}
-	t.SetStyle(table.StyleColoredYellowWhiteOnBlack)
+	t.SetStyle(tableStyle(quadctl))
 	t.Render()
 
 	return nil
@@ -54,8 +59,11 @@ func HandleStats(quadctl *util.State, quadlets []*util.Quadlet) error {
 		return err
 	}
 
+	// Nothing matching is not a failure - ps says so and exits 0 for exactly the same
+	// situation, and the two used to disagree (TODO.md section 4).
 	if len(psInfo) < 1 {
-		return fmt.Errorf("found no containers running or created that are related to quadlets in directory: %s", quadctl.SearchDir)
+		fmt.Fprintf(os.Stderr, "No containers found for the quadlets in %s.\n", quadctl.SearchDir)
+		return nil
 	}
 
 	//cmd := []string{"podman", "stats", "--no-stream"}
@@ -69,7 +77,8 @@ func HandleStats(quadctl *util.State, quadlets []*util.Quadlet) error {
 	return runCommand(quadctl.Runner, cmd)
 }
 
-func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
+func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
+	runner := quadctl.Runner
 
 	//REPOSITORY                                 TAG         IMAGE ID      CREATED       SIZE
 	cmd := []string{"podman", "images", "--noheading", "--filter", "reference=ADD_ID_HERE", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Created}}|{{.Size}}"}
@@ -162,6 +171,11 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 			}
 		}
 	}
+	if len(imageInfo) == 0 {
+		fmt.Fprintf(os.Stderr, "No images found for the quadlets in %s.\n", quadctl.SearchDir)
+		return nil
+	}
+
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.AppendHeader(table.Row{"REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"})
@@ -176,7 +190,7 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 			})
 		}
 	}
-	t.SetStyle(table.StyleColoredYellowWhiteOnBlack)
+	t.SetStyle(tableStyle(quadctl))
 	t.Render()
 
 	return nil
@@ -196,25 +210,30 @@ func HandleLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error
 		return commands, nil
 	}
 
-	if len(psInfo) > 0 {
-		if len(psInfo) == 1 {
-			containerName = psInfo[0][1]
-		} else {
-			names := []string{}
-			for _, info := range psInfo {
-				names = append(names, info[1])
-			}
-			selected, err := util.SelectFromList(names)
-			if err != nil {
-				return nil, fmt.Errorf("selecting container: %w", err)
-			}
-			containerName = selected
-		}
-		cmd = append(cmd, containerName)
+	// With nothing to name, this used to run a bare 'podman logs' and hand the user podman's
+	// "specify at least one container name or ID" - while exiting 0 (TODO.md section 4).
+	if len(psInfo) == 0 {
+		fmt.Fprintf(os.Stderr, "No containers found for the quadlets in %s.\n", quadctl.SearchDir)
+		return nil, nil
 	}
 
+	if len(psInfo) == 1 {
+		containerName = strings.TrimSpace(psInfo[0][1])
+	} else {
+		names := []string{}
+		for _, info := range psInfo {
+			names = append(names, strings.TrimSpace(info[1]))
+		}
+		selected, err := util.SelectFromList(names)
+		if err != nil {
+			return nil, fmt.Errorf("selecting container: %w", err)
+		}
+		containerName = selected
+	}
+	cmd = append(cmd, containerName)
+
 	if quadctl.IsPrintOnly {
-		c := NewCommand(fmt.Sprintf("Opening podman logs for %s\n", containerName))
+		c := NewCommand(fmt.Sprintf("Opening podman logs for container %s", containerName))
 		c.Cmd = cmd
 		commands = append(commands, c)
 	} else {
