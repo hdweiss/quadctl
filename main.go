@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/core"
 	"github.com/fkmiec/quadctl/internal/schema"
 	"github.com/fkmiec/quadctl/internal/util"
@@ -44,7 +45,7 @@ func run() int {
 		return fail(err)
 	}
 
-	cfg, err := util.LoadConfig(quadctl.IsRootful)
+	cfg, err := config.LoadConfig(quadctl.IsRootful)
 	if err != nil {
 		return fail(err)
 	}
@@ -165,7 +166,7 @@ func checkRequiredBinaries(quadctl *util.State) error {
 // the flags - it may name the search directory a flag argument refers to - so systemd.enabled
 // is applied here rather than at parse time, and --no-systemd is what makes it overridable
 // from the command line (TODO.md section 3).
-func resolveSystemdMode(quadctl *util.State, cfg *util.Config) error {
+func resolveSystemdMode(quadctl *util.State, cfg *config.Config) error {
 	if quadctl.IsSystemd && quadctl.IsNoSystemd {
 		return fmt.Errorf("-s/--systemd and --no-systemd contradict each other; pass one or neither")
 	}
@@ -195,7 +196,7 @@ func fail(err error) int {
 // the flags may still override.
 func initState() {
 	quadctl = &util.State{
-		Config:         util.DefaultConfig(),
+		Config:         config.DefaultConfig(),
 		QuadletSchemas: map[string]map[string]schema.SchemaOption{},
 		Runner:         util.ExecRunner{},
 		ListDepth:      defaultListDepth,
@@ -206,7 +207,7 @@ func initState() {
 }
 
 func displayQuadletSelector(quadctl *util.State) error {
-	quadletDirs, err := util.ListSubdirectories(quadctl.Config.QuadletSrcPath)
+	quadletDirs, err := config.ListSubdirectories(quadctl.Config.QuadletSrcPath)
 	if err != nil {
 		return err
 	}

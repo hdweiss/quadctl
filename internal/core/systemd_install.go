@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -132,7 +133,7 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 			f := func() error {
 				// CopyDir recurses, so drop-in directories and anything else the quadlet
 				// directory keeps alongside its files come along with it.
-				if err := util.CopyDir(searchDir, dest); err != nil {
+				if err := config.CopyDir(searchDir, dest); err != nil {
 					return fmt.Errorf("copying %s to %s: %w", searchDir, dest, err)
 				}
 				return nil
@@ -144,7 +145,7 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 			for _, q := range quadlets {
 				c.Output = append(c.Output, fmt.Sprintf("Copying file %s to %s", filepath.Base(q.Filepath), filepath.Join(targetDir, filepath.Base(q.Filepath))))
 				f := func() error {
-					if err := util.CopyFile(q.Filepath, filepath.Join(targetDir, filepath.Base(q.Filepath))); err != nil {
+					if err := config.CopyFile(q.Filepath, filepath.Join(targetDir, filepath.Base(q.Filepath))); err != nil {
 						return fmt.Errorf("copying %s: %w", q.Filepath, err)
 					}
 					return nil
@@ -158,7 +159,7 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 				destDropIn := filepath.Join(targetDir, filepath.Base(q.Filepath)+".d")
 				c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", filepath.Base(dropInDir), destDropIn))
 				f = func() error {
-					if err := util.CopyDir(dropInDir, destDropIn); err != nil {
+					if err := config.CopyDir(dropInDir, destDropIn); err != nil {
 						return fmt.Errorf("copying drop-in directory %s to %s: %w", dropInDir, destDropIn, err)
 					}
 					return nil

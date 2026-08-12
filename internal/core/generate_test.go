@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -124,7 +125,7 @@ func TestKubeDownForce(t *testing.T) {
 // TestGenerateStopCommandKubeNoPanic drives the two call sites that used to index the nil
 // slice, with the config that removed the || short-circuit hiding it.
 func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
-	cfg := util.DefaultConfig()
+	cfg := config.DefaultConfig()
 	cfg.IsRemoveVolumes = false
 	cfg.IsRemoveNetworks = false
 	quadctl := &util.State{

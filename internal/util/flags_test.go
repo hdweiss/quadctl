@@ -1,6 +1,7 @@
 package util
 
 import (
+	"github.com/fkmiec/quadctl/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,7 +50,7 @@ func TestGetSearchDir(t *testing.T) {
 		{"missing", "nope", "", true},
 	}
 
-	quadctl := &State{Config: &Config{QuadletSrcPath: src}}
+	quadctl := &State{Config: &config.Config{QuadletSrcPath: src}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ResolveSearchDir(quadctl, tt.arg)

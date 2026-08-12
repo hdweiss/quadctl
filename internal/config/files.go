@@ -1,4 +1,4 @@
-package util
+package config
 
 import (
 	"embed"
@@ -10,11 +10,11 @@ import (
 	"text/template"
 )
 
-//go:embed config/quadctl.ini
+//go:embed quadctl.ini
 var files embed.FS
 
 func installDefaultConfig(path string) error {
-	fileData, _ := files.ReadFile("config/quadctl.ini")
+	fileData, _ := files.ReadFile("quadctl.ini")
 	//fmt.Printf("In installDefaultConfig(%s):\n%s\n", path, string(fileData))
 	data := map[string]string{}
 	data["home"] = os.Getenv("HOME")

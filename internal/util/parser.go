@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/schema"
 	yaml "github.com/goccy/go-yaml"
 )
@@ -32,7 +33,7 @@ type State struct {
 	// Config is the loaded quadctl.ini. Treat it as read-only: it describes the machine, not
 	// this invocation, and handlers that write to it would change the meaning of the next
 	// directory in the same run.
-	Config *Config
+	Config *config.Config
 
 	QuadletSchemas map[string]map[string]schema.SchemaOption
 	Runner         Runner // Executes every external command; swapped for a fake in tests
@@ -220,7 +221,7 @@ func InitQuadlets(quadctl *State) ([]*Quadlet, error) {
 // like 'ps' that report on all quadlets managed by quadctl when no specific
 // quadlet name or path was given on the command line.
 func InitAllQuadlets(quadctl *State) ([]*Quadlet, error) {
-	dirs, err := ListSubdirectories(quadctl.Config.QuadletSrcPath)
+	dirs, err := config.ListSubdirectories(quadctl.Config.QuadletSrcPath)
 	if err != nil {
 		return nil, fmt.Errorf("listing quadlets in %s: %w", quadctl.Config.QuadletSrcPath, err)
 	}
@@ -297,7 +298,7 @@ func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Qua
 				//fmt.Printf("Calling CopyDir for: %s\n", f.Name())
 				path := filepath.Join(searchDir, f.Name())
 				newPath := filepath.Join(quadctl.DotQuadletsPath, f.Name())
-				if err := CopyDir(path, newPath); err != nil {
+				if err := config.CopyDir(path, newPath); err != nil {
 					return nil, fmt.Errorf("copying drop-in directory %s to %s: %w", path, newPath, err)
 				}
 				continue
@@ -311,7 +312,7 @@ func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Qua
 			//Copy any other files over (could be .container, .volume, etc. or .env file or a README ... whatever)
 			//fmt.Printf("Calling CopyFile for: %s\n", f.Name())
 			newPath := filepath.Join(quadctl.DotQuadletsPath, f.Name())
-			if err := CopyFile(path, newPath); err != nil {
+			if err := config.CopyFile(path, newPath); err != nil {
 				return nil, fmt.Errorf("copying %s to temporary .quadlets processing path %s: %w", path, newPath, err)
 			}
 		}
@@ -381,7 +382,7 @@ func parseDotQuadlets(path, destDir string) error {
 		if "---" == strings.TrimSpace(line) {
 			baseQuadletFilename = checkExtension(baseQuadletFilename, quadletText)
 
-			err := WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
+			err := config.WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
 			if err != nil {
 				return err
 			}
@@ -399,7 +400,7 @@ func parseDotQuadlets(path, destDir string) error {
 	if len(baseQuadletFilename) > 0 && len(quadletText) > 0 {
 		//fmt.Println("SAVING FINAL FILE...")
 		baseQuadletFilename = checkExtension(baseQuadletFilename, quadletText)
-		err := WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
+		err := config.WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
 		if err != nil {
 			return err
 		}

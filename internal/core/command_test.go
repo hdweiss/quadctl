@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -17,7 +18,7 @@ func newTestQuadctl(sub string) (*util.State, *util.RecordingRunner) {
 		Subcommand: sub,
 		Runner:     runner,
 		IsRootful:  true,
-		Config:     util.DefaultConfig(),
+		Config:     config.DefaultConfig(),
 	}, runner
 }
 

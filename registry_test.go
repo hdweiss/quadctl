@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -117,7 +118,7 @@ func TestResolveSystemdMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			quadctl := &util.State{IsSystemd: tt.systemd, IsNoSystemd: tt.noSystemd}
-			cfg := util.DefaultConfig()
+			cfg := config.DefaultConfig()
 			cfg.SystemdEnabled = tt.configured
 
 			err := resolveSystemdMode(quadctl, cfg)

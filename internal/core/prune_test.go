@@ -7,6 +7,7 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -15,7 +16,7 @@ func pruneTestQuadctl() *util.State {
 		Runner:     &util.RecordingRunner{},
 		Subcommand: "create",
 		IsRootful:  true,
-		Config:     util.DefaultConfig(),
+		Config:     config.DefaultConfig(),
 	}
 	q.Config.SystemdStopTmpl = template.Must(template.New("systemdStop").Parse("systemctl {{.user}} stop"))
 	return q

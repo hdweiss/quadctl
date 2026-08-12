@@ -1,11 +1,19 @@
-package util
+package config
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func write(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // loadConfigFrom writes an ini into a scratch config directory and loads it, the way
 // LoadConfig does on a real host.
@@ -100,7 +108,7 @@ func TestDefaultUserQuadletPathMatchesShippedConfig(t *testing.T) {
 		t.Errorf("DefaultUserQuadletPath() = %q, want %q", got, want)
 	}
 
-	shipped, err := files.ReadFile("config/quadctl.ini")
+	shipped, err := files.ReadFile("quadctl.ini")
 	if err != nil {
 		t.Fatal(err)
 	}

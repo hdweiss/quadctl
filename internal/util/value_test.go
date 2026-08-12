@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/schema"
 )
 
@@ -244,7 +245,7 @@ Image=docker.io/library/redis:7
 `)
 	write(t, filepath.Join(plain, "web.container"), "[Container]\nImage=docker.io/library/nginx:latest\n")
 
-	state := &State{Config: &Config{QuadletSrcPath: src}, SearchDir: src}
+	state := &State{Config: &config.Config{QuadletSrcPath: src}, SearchDir: src}
 	defer state.Cleanup()
 
 	if _, err := InitAllQuadlets(state); err != nil {
@@ -269,7 +270,7 @@ Image=docker.io/library/redis:7
 ---
 `)
 
-	state := &State{Config: DefaultConfig(), SearchDir: dir}
+	state := &State{Config: config.DefaultConfig(), SearchDir: dir}
 	if _, err := InitQuadlets(state); err != nil {
 		t.Fatalf("InitQuadlets: %v", err)
 	}
