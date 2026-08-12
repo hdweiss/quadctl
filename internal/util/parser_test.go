@@ -1,6 +1,7 @@
 package util
 
 import (
+	"github.com/fkmiec/quadctl/internal/schema"
 	"os"
 	"path/filepath"
 	"slices"
@@ -164,7 +165,7 @@ func TestParseIniFileQuotedValue(t *testing.T) {
 	}
 
 	// The schema turns it into one value, with the quotes resolved.
-	values := OptionValues(GetQuadletOptionsMap("container"), "Environment", env)
+	values := OptionValues(schema.QuadletOptions("container"), "Environment", env)
 	if !slices.Contains(values, "GREETING=hello world") {
 		t.Errorf("quoted value did not resolve to a single argument: %q", values)
 	}

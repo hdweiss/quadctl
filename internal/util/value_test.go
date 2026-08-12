@@ -44,7 +44,7 @@ func TestParseFields(t *testing.T) {
 // TestOptionValues covers the rule that replaced tokenizing at parse time: the schema decides
 // whether a written line is one value or several.
 func TestOptionValues(t *testing.T) {
-	options := GetQuadletOptionsMap("container")
+	options := schema.QuadletOptions("container")
 
 	tests := []struct {
 		name string
@@ -104,7 +104,7 @@ func TestOptionValues(t *testing.T) {
 // is cut into arguments before the value is put back, so a value containing a space is one
 // argument no matter which shape of template carries it.
 func TestQuadletOptionToPodmanKeepsValuesWhole(t *testing.T) {
-	options := GetQuadletOptionsMap("container")
+	options := schema.QuadletOptions("container")
 
 	tests := []struct {
 		key   string

@@ -64,7 +64,7 @@ func run() int {
 	if err != nil {
 		return fail(err)
 	}
-	quadctl.QuadletSchemas = util.GetQuadletSchemas()
+	quadctl.QuadletSchemas = schema.AllQuadletOptions()
 
 	quadlets, err := util.InitQuadlets(quadctl)
 	if err != nil {

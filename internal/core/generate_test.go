@@ -11,6 +11,7 @@ import (
 
 	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/runner"
+	"github.com/fkmiec/quadctl/internal/schema"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -31,7 +32,7 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 func TestGenerateCommandsGolden(t *testing.T) {
 	quadctl := &util.State{
 		Runner:         &runner.RecordingRunner{},
-		QuadletSchemas: util.GetQuadletSchemas(),
+		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      "testdata/stack",
 	}
 
@@ -159,7 +160,7 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 	quadctl := &util.State{
 		Runner:         &runner.RecordingRunner{},
-		QuadletSchemas: util.GetQuadletSchemas(),
+		QuadletSchemas: schema.AllQuadletOptions(),
 	}
 	// A type generateCreateCommand doesn't handle, so it returns an empty slice.
 	q := &util.Quadlet{ID: "base", Type: ".image", Sections: map[string]map[string][]string{}}
@@ -178,7 +179,7 @@ func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 func TestGenerateStartupCommandKubeIsClean(t *testing.T) {
 	quadctl := &util.State{
 		Runner:         &runner.RecordingRunner{},
-		QuadletSchemas: util.GetQuadletSchemas(),
+		QuadletSchemas: schema.AllQuadletOptions(),
 	}
 	q := &util.Quadlet{
 		ID:             "app",
@@ -207,7 +208,7 @@ func TestExecBecomesArgv(t *testing.T) {
 
 	quadctl := &util.State{
 		Runner:         &runner.RecordingRunner{},
-		QuadletSchemas: util.GetQuadletSchemas(),
+		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      dir,
 	}
 	quadlets, err := util.InitQuadlets(quadctl)
@@ -244,7 +245,7 @@ func TestPodmanArgsSplitOnce(t *testing.T) {
 
 	quadctl := &util.State{
 		Runner:         &runner.RecordingRunner{},
-		QuadletSchemas: util.GetQuadletSchemas(),
+		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      dir,
 	}
 	quadlets, err := util.InitQuadlets(quadctl)

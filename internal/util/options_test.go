@@ -10,10 +10,10 @@ import (
 
 func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	quadletSchemas := map[string]map[string]schema.SchemaOption{}
-	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
-	quadletSchemas["network"] = GetQuadletOptionsMap("network")
-	quadletSchemas["container"] = GetQuadletOptionsMap("container")
-	quadletSchemas["pod"] = GetQuadletOptionsMap("pod")
+	quadletSchemas["volume"] = schema.QuadletOptions("volume")
+	quadletSchemas["network"] = schema.QuadletOptions("network")
+	quadletSchemas["container"] = schema.QuadletOptions("container")
+	quadletSchemas["pod"] = schema.QuadletOptions("pod")
 
 	// Defining the columns of the table
 	var tests = []struct {
@@ -60,10 +60,10 @@ func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
 
 func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	quadletSchemas := map[string]map[string]schema.SchemaOption{}
-	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
-	quadletSchemas["network"] = GetQuadletOptionsMap("network")
-	quadletSchemas["container"] = GetQuadletOptionsMap("container")
-	quadletSchemas["pod"] = GetQuadletOptionsMap("pod")
+	quadletSchemas["volume"] = schema.QuadletOptions("volume")
+	quadletSchemas["network"] = schema.QuadletOptions("network")
+	quadletSchemas["container"] = schema.QuadletOptions("container")
+	quadletSchemas["pod"] = schema.QuadletOptions("pod")
 
 	// Defining the columns of the table
 	var tests = []struct {
@@ -113,10 +113,10 @@ func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
 
 func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	quadletSchemas := map[string]map[string]schema.SchemaOption{}
-	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
-	quadletSchemas["network"] = GetQuadletOptionsMap("network")
-	quadletSchemas["container"] = GetQuadletOptionsMap("container")
-	quadletSchemas["pod"] = GetQuadletOptionsMap("pod")
+	quadletSchemas["volume"] = schema.QuadletOptions("volume")
+	quadletSchemas["network"] = schema.QuadletOptions("network")
+	quadletSchemas["container"] = schema.QuadletOptions("container")
+	quadletSchemas["pod"] = schema.QuadletOptions("pod")
 
 	// Defining the columns of the table
 	var tests = []struct {
@@ -173,10 +173,10 @@ func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
 
 func TestContainerQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	quadletSchemas := map[string]map[string]schema.SchemaOption{}
-	quadletSchemas["volume"] = GetQuadletOptionsMap("volume")
-	quadletSchemas["network"] = GetQuadletOptionsMap("network")
-	quadletSchemas["container"] = GetQuadletOptionsMap("container")
-	quadletSchemas["pod"] = GetQuadletOptionsMap("pod")
+	quadletSchemas["volume"] = schema.QuadletOptions("volume")
+	quadletSchemas["network"] = schema.QuadletOptions("network")
+	quadletSchemas["container"] = schema.QuadletOptions("container")
+	quadletSchemas["pod"] = schema.QuadletOptions("pod")
 
 	// Defining the columns of the table
 	var tests = []struct {
