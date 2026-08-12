@@ -46,8 +46,18 @@ func NewCommand(label string) Command {
 	}
 }
 
+// isForegroundRun reports whether cmd is a 'podman run' that will attach to the terminal,
+// ie. one that carries neither -d nor --detach. Such a command owns stdio: the spinner
+// would interfere with the container's output, and the container's own streams have to be
+// wired to ours.
+func isForegroundRun(cmd []string) bool {
+	return slices.Contains(cmd, "run") &&
+		!slices.Contains(cmd, "-d") &&
+		!slices.Contains(cmd, "--detach")
+}
+
 func DefaultPreFn(c *Command) {
-	if slices.Contains(c.Cmd, "run") && (!slices.Contains(c.Cmd, "-d") || !slices.Contains(c.Cmd, "--detach")) {
+	if isForegroundRun(c.Cmd) {
 		return // Skip spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
 	}
 	c.Spinner = spinner.New(spinner.CharSets[14], 100*time.Millisecond) // Build our new spinner
@@ -68,7 +78,7 @@ func DefaultRunFn(c *Command) {
 		//fmt.Printf("Array of strings in my command:\n%q\n", c.Cmd)
 		cmd := exec.Command(c.Cmd[0], c.Cmd[1:]...)
 
-		if slices.Contains(c.Cmd, "run") && (!slices.Contains(c.Cmd, "-d") || !slices.Contains(c.Cmd, "--detach")) {
+		if isForegroundRun(c.Cmd) {
 			fmt.Printf("Running in foreground: %s\n", strings.Join(c.Cmd, " "))
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -84,7 +94,7 @@ func DefaultRunFn(c *Command) {
 }
 
 func DefaultPostFn(c *Command) {
-	if slices.Contains(c.Cmd, "run") && (!slices.Contains(c.Cmd, "-d") || !slices.Contains(c.Cmd, "--detach")) {
+	if isForegroundRun(c.Cmd) {
 		return // Skip stopping the spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
 	}
 	if c.Error != nil {
