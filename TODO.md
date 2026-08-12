@@ -13,7 +13,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 
 ## 1. Critical — data loss / silent wrong behavior
 
-- [ ] **`quadctl -s create|start <file>` wipes the whole quadlet generator directory.** **[verified]**
+- [x] **`quadctl -s create|start <file>` wipes the whole quadlet generator directory.** **[verified]**
   `getSearchDir` (`util/flags.go:351`) sets `dir = filepath.Dir(path)` for a file argument
   and never makes it absolute, so `SearchDir` becomes the relative string `"."`.
   `HandleSystemdCreate` then computes `dest := filepath.Join(targetDir, filepath.Base(searchDir))`
@@ -35,7 +35,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   relative-to-src branches), and make `pruneStaleSystemdFiles` refuse to run when
   `dest == targetDir` (or when `filepath.Base(searchDir)` is `.`/`..`/empty).
 
-- [ ] **`-f`/`--file` has never worked.** **[verified]**
+- [x] **`-f`/`--file` has never worked.** **[verified]**
   `InitQuadlets` reads the file name from `flag.Arg(1)` (`util/parser.go:92`), i.e. the
   *global* argument list — which is `["start", "-f", "foo.container"]`, so `flag.Arg(1)`
   is the literal string `-f`. The lookup misses, the filter is skipped silently, and the
@@ -60,8 +60,10 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   (`core/commands.go:63-65`), producing `sh -c 'echo` + `hi'`.
   Needs proper shell-style tokenization applied at *use* time, not at parse time, and
   `Exec`/`HealthCmd` need to keep their raw value.
+  *Partially mitigated:* the drop is no longer silent — the warning is tagged `[WARN]` and
+  prints without `-v` (`PLAN.md` Phase 0). The value model itself is `PLAN.md` 3.1.
 
-- [ ] **Failed commands still exit 0.** **[verified]**
+- [x] **Failed commands still exit 0.** **[verified]**
   `RunCommands` prints the error and moves on (`core/commands.go:126-160`); `main` returns
   normally (`main.go:122-125`). `quadctl stop` on a non-existent container prints
   `exit status 125` and exits `0`. Nothing that wraps quadctl in a script or CI job can
@@ -79,7 +81,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
      `options[i].…` like every other schema file, leaving `PodmanTemplateParsed` nil →
      nil dereference at `util/parser.go:731`.
 
-- [ ] **Panics reachable from ordinary input.**
+- [x] **Panics reachable from ordinary input.**
   - `util/parser.go:564` — `all[podID].GeneratedNames["pod_name"]` dereferences a nil
     `*Quadlet` when a container's `Pod=` names a pod file that isn't in the directory
     (typo, or the pod file was deleted).
@@ -160,12 +162,12 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `if len(name) < 12 { continue }` — presumably meant to reject truncated image *IDs*, but
   it's applied to image *names*, so `alpine`, `nginx`, `caddy` etc. never show up.
 
-- [ ] **Leftover debug print** — `fmt.Printf("generateStartupCommand(%s): %v\n", …)`
+- [x] **Leftover debug print** — `fmt.Printf("generateStartupCommand(%s): %v\n", …)`
   fires on every `.kube` start (`core/handlers.go:1563`).
 
 - [ ] **`HandleList`'s error is discarded** at the call site (`main.go:85`).
 
-- [ ] **Detached `podman run` is treated as foreground** (`core/commands.go:49`, `:70`, `:86`).
+- [x] **Detached `podman run` is treated as foreground** (`core/commands.go:49`, `:70`, `:86`).
   `slices.Contains(c.Cmd,"run") && (!slices.Contains(c.Cmd,"-d") || !slices.Contains(c.Cmd,"--detach"))`
   — the `||` is true unless *both* spellings are present, so any `-d`-only run skips the
   spinner and attaches stdio. Should be `&&`. The same three-way copy of this condition
@@ -174,7 +176,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 - [ ] **All `"` characters are stripped from every argument** before exec
   (`core/commands.go:63-65`), corrupting values that legitimately contain quotes.
 
-- [ ] **`html/template` used for shell commands and the config file**
+- [x] **`html/template` used for shell commands and the config file**
   (`main.go:5`, `util/parser.go:8`, `util/files.go:7`). These are not HTML; the escaping
   will mangle `"`, `&`, `<`, `>` in user-configured `systemd.*` command templates and in
   `$HOME` when the default config is written. Should be `text/template` everywhere
