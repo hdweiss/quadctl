@@ -13,6 +13,11 @@ import (
 	"github.com/fkmiec/quadctl/util"
 )
 
+// WarnPrefix marks a warning that is shown even without -v, because it reports that part of
+// the user's quadlet file was silently ignored rather than merely commenting on execution.
+// Warnings without it stay behind -v.
+const WarnPrefix = "[WARN] "
+
 type Command struct {
 	Label    string
 	PreFn    func(*Command)
@@ -130,18 +135,21 @@ func RunCommands(quadctl *util.Quadctl, commands []Command) int {
 
 	exitCode := 0
 
-	if quadctl.IsVerbose {
-		isHeaderPrinted := false
-		for _, c := range commands {
-			if len(c.Warnings) > 0 {
-				if !isHeaderPrinted {
-					fmt.Printf("\n# --- WARNINGS ---\n\n")
-					isHeaderPrinted = true
-				}
-				for _, w := range c.Warnings {
-					fmt.Printf(" => %s\n", w)
-				}
+	isHeaderPrinted := false
+	for _, c := range commands {
+		for _, w := range c.Warnings {
+			// Without -v, only warnings about input that was dropped are worth interrupting
+			// for; the rest is commentary on how the command was built.
+			// Contains, not HasPrefix: handlers prepend the source file name to the
+			// warnings the generators hand back.
+			if !quadctl.IsVerbose && !strings.Contains(w, WarnPrefix) {
+				continue
 			}
+			if !isHeaderPrinted {
+				fmt.Fprintf(os.Stderr, "\n# --- WARNINGS ---\n\n")
+				isHeaderPrinted = true
+			}
+			fmt.Fprintf(os.Stderr, " => %s\n", w)
 		}
 	}
 	if quadctl.IsPrintOnly && len(commands) > 0 {

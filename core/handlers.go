@@ -1485,7 +1485,11 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 				}
 				// Check if multiple values and not supported
 				if !opt.AllowMultiple && len(vals) > 1 {
-					warnings = append(warnings, fmt.Sprintf("Option %s does not accept multiple space-separated values: '%s'\n", k, strings.Join(vals, " ")))
+					// Values are tokenized on whitespace at parse time, so any single-valued
+					// option whose value contains a space lands here and is dropped. Shown by
+					// default until the value model is reworked - being ignored silently is
+					// how this reads as "quadctl ran my container with the wrong command".
+					warnings = append(warnings, fmt.Sprintf("%sOption %s=%s was ignored: it does not accept multiple space-separated values", WarnPrefix, k, strings.Join(vals, " ")))
 					continue
 				}
 
@@ -1633,7 +1637,7 @@ func generateRunCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []str
 	// schema, unhandled type), so there's nothing to strip the 'podman container create'
 	// prefix from.
 	if len(createCmd) < 3 {
-		warnings = append(warnings, fmt.Sprintf("Could not generate a run command for %s", q.ID))
+		warnings = append(warnings, fmt.Sprintf("%sCould not generate a run command for %s", WarnPrefix, q.ID))
 		return nil, warnings
 	}
 	runCmd := []string{"podman", "run"}
