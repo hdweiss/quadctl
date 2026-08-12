@@ -111,25 +111,20 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 		for _, q := range quadlets {
 			// Images only pertain to containers
 			if q.Type == ".container" {
-				if imgSec, ok := q.Sections["Container"]; ok {
-					if imgList, ok := imgSec["Image"]; ok && len(imgList) > 0 {
-						name := strings.TrimSpace(imgList[0]) // IMAGE ID from quadlet file
-						if len(name) < 12 {
-							continue
-						}
-						cmd[4] = "reference=" + name
-						output, err := runCommandCapture(runner, cmd)
-						if err != nil {
-							fmt.Fprintf(os.Stderr, "Error fetching image info for quadlet %s: %v\n", q.ID, err)
-							continue
-						}
-						lines := strings.Split(output, "\n")
-						for _, line := range lines {
-							parts := strings.Split(line, "|")
-							if len(parts) >= 5 {
-								imageInfo = append(imageInfo, parts)
-							}
-						}
+				name := strings.TrimSpace(util.LastValue(q.Sections["Container"], "Image"))
+				if name == "" || len(name) < 12 {
+					continue
+				}
+				cmd[4] = "reference=" + name
+				output, err := runCommandCapture(runner, cmd)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error fetching image info for quadlet %s: %v\n", q.ID, err)
+					continue
+				}
+				for _, line := range strings.Split(output, "\n") {
+					parts := strings.Split(line, "|")
+					if len(parts) >= 5 {
+						imageInfo = append(imageInfo, parts)
 					}
 				}
 			} else if q.Type == ".kube" {

@@ -1,0 +1,13 @@
+# Exercises the value model (PLAN.md 3.1), not the dependency graph: a command line kept
+# whole, a quoted value containing a space, a repeated list key, a whitespace list on one
+# line, and a continuation.
+[Container]
+Image=docker.io/library/alpine:3.20
+ContainerName=shell
+Exec=/bin/sh -c "echo hello world"
+HealthCmd=curl -f http://localhost/health
+Environment=GREETING="hello world"
+Environment=TZ=UTC
+AddCapability=NET_ADMIN NET_RAW
+Label=owner=platform \
+      tier=demo

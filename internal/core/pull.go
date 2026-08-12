@@ -13,10 +13,8 @@ func HandlePull(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, err
 	images := []string{}
 	for _, q := range quadlets {
 		if q.Type == ".container" {
-			if imgSec, ok := q.Sections["Container"]; ok {
-				if imgList, ok := imgSec["Image"]; ok && len(imgList) > 0 {
-					images = append(images, imgList[0])
-				}
+			if img := util.LastValue(q.Sections["Container"], "Image"); img != "" {
+				images = append(images, img)
 			}
 		} else if q.Type == ".kube" {
 			for _, res := range q.KubeResources {

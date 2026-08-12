@@ -70,19 +70,26 @@ func TestParseQuadletServiceNames(t *testing.T) {
 	}
 }
 
-// TestParseIniFileQuotedValue pins today's behavior for a quoted value containing a space.
-// It is wrong - TODO.md section 1 - and PLAN.md 3.1 replaces the value model that causes it.
-// The test is here so that rewrite has to state what it changed rather than changing it
-// silently.
+// TestParseIniFileQuotedValue follows a quoted value containing a space from the file to the
+// argument a container would actually receive. Under the old value model the parser split it
+// on whitespace and the generator then dropped the option entirely (TODO.md section 1);
+// PLAN.md 3.1 made the line survive parsing intact and become one argument at use time.
 func TestParseIniFileQuotedValue(t *testing.T) {
 	q, err := ParseQuadletFile(filepath.Join(fixtures, "app.container"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// The parser records the line as written, quotes and all.
 	env := q.Sections["Container"]["Environment"]
 	if !slices.Contains(env, `GREETING="hello world"`) {
 		t.Errorf("quoted value did not survive parsing as one value: %q", env)
+	}
+
+	// The schema turns it into one value, with the quotes resolved.
+	values := OptionValues(GetQuadletOptionsMap("container"), "Environment", env)
+	if !slices.Contains(values, "GREETING=hello world") {
+		t.Errorf("quoted value did not resolve to a single argument: %q", values)
 	}
 }
 

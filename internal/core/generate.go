@@ -34,8 +34,7 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 		if volSec, ok := q.Sections["Volume"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(volSec)...)
 			for _, k := range slices.Sorted(maps.Keys(volSec)) {
-				vals := volSec[k]
-				for _, v := range vals {
+				for _, v := range util.OptionValues(options, k, volSec[k]) {
 					switch k {
 					case "Type":
 						continue // Type is not a Podman CLI option
@@ -48,13 +47,12 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 					case "PodmanArgs": // Handled above
 						continue
 					default:
-						podmanOpt, err := util.QuadletOptionToPodman("volume", options, k, v)
+						podmanArgs, err := util.QuadletOptionToPodman("volume", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
 						}
-						// Use Fields to parse space-separated flags
-						cmd = append(cmd, util.ParseFields(podmanOpt)...)
+						cmd = append(cmd, podmanArgs...)
 					}
 				}
 			}
@@ -72,8 +70,7 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 		if netSec, ok := q.Sections["Network"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(netSec)...)
 			for _, k := range slices.Sorted(maps.Keys(netSec)) {
-				vals := netSec[k]
-				for _, v := range vals {
+				for _, v := range util.OptionValues(options, k, netSec[k]) {
 					switch k {
 					case "NetworkName":
 						continue // NetworkName is for systemd and does not affect Podman CLI
@@ -83,13 +80,12 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 						continue // NetworkDeleteOnStop is for systemd and does not affect Podman CLI
 					case "PodmanArgs": // Handled above
 					default:
-						podmanOpt, err := util.QuadletOptionToPodman("network", options, k, v)
+						podmanArgs, err := util.QuadletOptionToPodman("network", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
 						}
-						// Use Fields to parse space-separated flags
-						cmd = append(cmd, util.ParseFields(podmanOpt)...)
+						cmd = append(cmd, podmanArgs...)
 					}
 				}
 			}
@@ -112,21 +108,19 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 		if podSec, ok := q.Sections["Pod"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(podSec)...)
 			for _, k := range slices.Sorted(maps.Keys(podSec)) {
-				vals := podSec[k]
-				for _, v := range vals {
+				for _, v := range util.OptionValues(options, k, podSec[k]) {
 					switch k {
 					case "ServiceName":
 						continue // ServiceName is for systemd and does not affect Podman CLI
 					case "PodmanArgs": // Handled above
 					case "PodName": // Handled above
 					default:
-						podmanOpt, err := util.QuadletOptionToPodman("pod", options, k, v)
+						podmanArgs, err := util.QuadletOptionToPodman("pod", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
 						}
-						// Use Fields to parse space-separated flags
-						cmd = append(cmd, util.ParseFields(podmanOpt)...)
+						cmd = append(cmd, podmanArgs...)
 					}
 				}
 			}
@@ -165,32 +159,24 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 				configuredPodmanArgs = append(configuredPodmanArgs, util.ParseFields(quadctl.PodmanArgs)...)
 			}
 			if quadctl.RunCmd != "" {
-				execCmd = strings.Split(quadctl.RunCmd, " ")
+				execCmd = util.ParseFields(quadctl.RunCmd)
 			}
 
 			cmd = append(cmd, configuredPodmanArgs...)
 			for _, k := range slices.Sorted(maps.Keys(contSec)) {
-				vals := contSec[k]
-				opt, ok := options[k]
-				if !ok {
+				if _, ok := options[k]; !ok {
 					warnings = append(warnings, fmt.Sprintf("Quadlet container option not defined: %s", k))
 					continue
 				}
-				// Check if multiple values and not supported
-				if !opt.AllowMultiple && len(vals) > 1 {
-					// Values are tokenized on whitespace at parse time, so any single-valued
-					// option whose value contains a space lands here and is dropped. Shown by
-					// default until the value model is reworked - being ignored silently is
-					// how this reads as "quadctl ran my container with the wrong command".
-					warnings = append(warnings, fmt.Sprintf("%sOption %s=%s was ignored: it does not accept multiple space-separated values", WarnPrefix, k, strings.Join(vals, " ")))
-					continue
-				}
+				vals := util.OptionValues(options, k, contSec[k])
 
 				if k == "Exec" {
-					// Exec is a special case since it's not a Podman CLI option. Append command and args to the end of the create command.
-					// Ignore quadlet file Exec option if --exec flag was passed on the CLI
+					// Exec is not a Podman CLI option: it is the command appended after the
+					// image. The written value is a command line, so it is split into argv
+					// here - quoting survives, which is the whole point of keeping the value
+					// intact until now. A --exec flag on the CLI wins over the file.
 					if len(execCmd) < 1 {
-						execCmd = append(execCmd, strings.Split(vals[0], " ")...)
+						execCmd = util.ParseFields(vals[0])
 					}
 					continue
 				}
@@ -223,13 +209,12 @@ func generateCreateCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []
 							}
 						}
 
-						podmanOpt, err := util.QuadletOptionToPodman("container", options, k, v)
+						podmanArgs, err := util.QuadletOptionToPodman("container", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
 						}
-						// Use Fields to parse space-separated flags
-						cmd = append(cmd, util.ParseFields(podmanOpt)...)
+						cmd = append(cmd, podmanArgs...)
 					}
 				}
 			}
@@ -266,8 +251,7 @@ func generateStartupCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, [
 		if kubeSec, ok := q.Sections["Kube"]; ok {
 			cmd = append(cmd, getRawPodmanArgs(kubeSec)...)
 			for _, k := range slices.Sorted(maps.Keys(kubeSec)) {
-				vals := kubeSec[k]
-				for _, v := range vals {
+				for _, v := range util.OptionValues(options, k, kubeSec[k]) {
 					switch k {
 					case "Yaml":
 						continue // Yaml is parsed ahead of time and is appended at the end as the file argument for podman play kube
@@ -276,13 +260,12 @@ func generateStartupCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, [
 					case "PodmanArgs": // Handled above
 						continue
 					default:
-						podmanOpt, err := util.QuadletOptionToPodman("kube", options, k, v)
+						podmanArgs, err := util.QuadletOptionToPodman("kube", options, k, v)
 						if err != nil {
 							warnings = append(warnings, err.Error())
 							continue
 						}
-						// Use Fields to parse space-separated flags
-						cmd = append(cmd, util.ParseFields(podmanOpt)...)
+						cmd = append(cmd, podmanArgs...)
 					}
 				}
 			}
@@ -370,15 +353,15 @@ func generateStopCommand(quadctl *util.Quadctl, q *util.Quadlet) []string {
 // kubeDownForce reports whether a .kube quadlet sets KubeDownForce=true. The key is
 // optional, so the section and the value slice may both be absent.
 func kubeDownForce(q *util.Quadlet) bool {
-	vals := q.Sections["Kube"]["KubeDownForce"]
-	return len(vals) > 0 && strings.EqualFold(vals[0], "true")
+	return strings.EqualFold(util.LastValue(q.Sections["Kube"], "KubeDownForce"), "true")
 }
 
-// Helper: Get raw PodmanArgs securely
+// getRawPodmanArgs turns the PodmanArgs= lines of a section into argv. Each line is a command
+// line fragment, so each is split on whitespace with quoting honored, and repeated lines
+// accumulate in the order written.
 func getRawPodmanArgs(section map[string][]string) []string {
 	var args []string
 	for _, argStr := range section["PodmanArgs"] {
-		// Use Fields to parse space-separated flags
 		args = append(args, util.ParseFields(argStr)...)
 	}
 	return args

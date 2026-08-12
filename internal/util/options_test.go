@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/schema"
@@ -42,7 +43,11 @@ func TestVolumeQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			ans, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			// These cases are about the podman spelling of an option, not about argv
+			// boundaries - none of their values contain a space - so the arguments are
+			// joined back into the one-line form the table is written in.
+			ans := strings.Join(argv, " ")
 			if err != nil {
 				t.Errorf("got %s, want %s", ans, tt.want)
 			}
@@ -91,7 +96,11 @@ func TestNetworkQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			ans, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			// These cases are about the podman spelling of an option, not about argv
+			// boundaries - none of their values contain a space - so the arguments are
+			// joined back into the one-line form the table is written in.
+			ans := strings.Join(argv, " ")
 			if err != nil {
 				t.Errorf("got %s, want %s", ans, tt.want)
 			}
@@ -147,7 +156,11 @@ func TestPodQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			ans, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			// These cases are about the podman spelling of an option, not about argv
+			// boundaries - none of their values contain a space - so the arguments are
+			// joined back into the one-line form the table is written in.
+			ans := strings.Join(argv, " ")
 			if err != nil {
 				t.Errorf("got %s, want %s", ans, tt.want)
 			}
@@ -278,7 +291,11 @@ func TestContainerQuadletOptionsToPodmanTableDriven(t *testing.T) {
 	for _, tt := range tests {
 		quadletOpt := fmt.Sprintf("%s=%s", tt.key, tt.value)
 		t.Run(quadletOpt, func(t *testing.T) {
-			ans, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			argv, err := QuadletOptionToPodman(tt.qType, tt.options, tt.key, tt.value)
+			// These cases are about the podman spelling of an option, not about argv
+			// boundaries - none of their values contain a space - so the arguments are
+			// joined back into the one-line form the table is written in.
+			ans := strings.Join(argv, " ")
 			if err != nil {
 				t.Errorf("got %s, want %s", ans, tt.want)
 			}

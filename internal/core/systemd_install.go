@@ -526,9 +526,9 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 				c.Output = append(c.Output, fmt.Sprintf("Removing volume %s", q.ID))
 				var fn func()
 				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
-				if volName := q.Sections["Volume"]["VolumeName"]; volName != nil {
+				if volName := util.LastValue(q.Sections["Volume"], "VolumeName"); volName != "" {
 					fn = func() {
-						_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", volName[0]})
+						_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", volName})
 					}
 				} else {
 					fn = func() {
@@ -541,9 +541,9 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Com
 				c.Output = append(c.Output, fmt.Sprintf("Removing network %s", q.ID))
 				var fn func()
 				//Default name has systemd- prefix. If non-default name was specified, use it, otherwise use default prefix.
-				if networkName := q.Sections["Network"]["NetworkName"]; networkName != nil {
+				if networkName := util.LastValue(q.Sections["Network"], "NetworkName"); networkName != "" {
 					fn = func() {
-						_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", networkName[0]})
+						_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", networkName})
 					}
 				} else {
 					fn = func() {

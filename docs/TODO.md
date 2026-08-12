@@ -49,19 +49,20 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   (`flagSets[sub].Arg(0)`), and error out (not silently continue) when the named file
   isn't among the parsed quadlets.
 
-- [ ] **Any single-valued option whose value contains spaces is silently dropped.** **[verified]**
+- [x] **Any single-valued option whose value contains spaces is silently dropped.** **[verified]**
   `parseIniFile` splits every value on whitespace via `ParseFields` (`util/parser.go:526`),
   so `Exec=/bin/sh -c "echo hi"` becomes three values; `generateCreateCommand` then hits
   `!opt.AllowMultiple && len(vals) > 1` and `continue`s (`core/handlers.go:1481`). The
   container is created with the image's default command and **nothing is printed unless
   `-v` is passed**. Same for `HealthCmd`, `Entrypoint`, `Annotation`, `Label`, etc.
-  Quoting the whole value doesn't help either: the single value is then re-split on `" "`
-  (`core/handlers.go:1490`) and the quotes are stripped per-arg at exec time
-  (`core/commands.go:63-65`), producing `sh -c 'echo` + `hi'`.
-  Needs proper shell-style tokenization applied at *use* time, not at parse time, and
-  `Exec`/`HealthCmd` need to keep their raw value.
-  *Partially mitigated:* the drop is no longer silent — the warning is tagged `[WARN]` and
-  prints without `-v` (`PLAN.md` Phase 0). The value model itself is `PLAN.md` 3.1.
+  *Fixed by `PLAN.md` 3.1:* the parser records each assignment as written; the schema decides
+  at use time whether a line is one value or several, and the last assignment to a
+  single-valued option wins. The warning that reported the drop is gone with the drop.
+  **Residual gap:** for a repeatable option the split is unconditional, so `AddCapability=A B`
+  gives two values (right) but `Volume=/my path:/data` gives two as well (wrong) unless the
+  value is quoted. Podman distinguishes these per option; the schema has one `AllowMultiple`
+  flag and cannot. Fixing it means a second schema field — worth doing when something needs
+  it, not before.
 
 - [x] **Failed commands still exit 0.** **[verified]**
   `RunCommands` prints the error and moves on (`core/commands.go:126-160`); `main` returns
@@ -174,8 +175,11 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   spinner and attaches stdio. Should be `&&`. The same three-way copy of this condition
   should be one helper.
 
-- [ ] **All `"` characters are stripped from every argument** before exec
+- [x] **All `"` characters are stripped from every argument** before exec
   (`core/commands.go:63-65`), corrupting values that legitimately contain quotes.
+  *Fixed by `PLAN.md` 3.1:* quoting is resolved once, where the value is written, so what
+  reaches exec is argv and nothing needs stripping. Print mode shell-quotes it back
+  (`core.ShellQuote`), so what it shows is what would run.
 
 - [x] **`html/template` used for shell commands and the config file**
   (`main.go:5`, `util/parser.go:8`, `util/files.go:7`). These are not HTML; the escaping
@@ -183,10 +187,13 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `$HOME` when the default config is written. Should be `text/template` everywhere
   (`schema/` already uses `text/template`).
 
-- [ ] **`parseIniFile` doesn't implement systemd INI semantics** (`util/parser.go:494-537`):
+- [x] **`parseIniFile` doesn't implement systemd INI semantics** (`util/parser.go:494-537`):
   no `\` line continuation (common in real quadlets with long `Exec=`/`PodmanArgs=`), no
   "empty value resets the list", no handling of repeated section headers beyond merging.
   Drop-in parse errors are swallowed entirely (`util/parser.go:432`).
+  *Fixed by `PLAN.md` 3.1:* continuations are joined, an empty assignment resets the key,
+  drop-ins are applied in name order and a drop-in that can't be read is now an error.
+  Repeated section headers still merge, which matches systemd.
 
 - [ ] **`.image` and `.build` quadlets are ignored without a word.**
   Full schemas exist (`schema/image.go`, `schema/build.go`) but the extension map

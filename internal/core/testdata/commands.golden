@@ -18,3 +18,8 @@ create podman container create --name web-app --restart always --cap-add NET_ADM
 start  -
 stop   -
 
+## shell.container
+create podman container create --name shell --cap-add NET_ADMIN --cap-add NET_RAW --name shell --env "GREETING=hello world" --env TZ=UTC --health-cmd "curl -f http://localhost/health" --label owner=platform --label tier=demo docker.io/library/alpine:3.20 /bin/sh -c "echo hello world"
+start  podman container start shell
+stop   podman stop shell
+

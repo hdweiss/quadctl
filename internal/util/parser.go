@@ -385,30 +385,15 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	switch q.Type {
 	case ".container":
 		q.GeneratedNames["container"] = id
-		vals := q.Sections["Container"]["ServiceName"]
-		if len(vals) > 0 {
-			confServiceName = vals[0]
-		}
+		confServiceName = LastValue(q.Sections["Container"], "ServiceName")
 	case ".pod":
-		vals := q.Sections["Pod"]["ServiceName"]
-		if len(vals) > 0 {
-			confServiceName = vals[0]
-		}
+		confServiceName = LastValue(q.Sections["Pod"], "ServiceName")
 	case ".volume":
-		vals := q.Sections["Volume"]["ServiceName"]
-		if len(vals) > 0 {
-			confServiceName = vals[0]
-		}
+		confServiceName = LastValue(q.Sections["Volume"], "ServiceName")
 	case ".network":
-		vals := q.Sections["Network"]["ServiceName"]
-		if len(vals) > 0 {
-			confServiceName = vals[0]
-		}
+		confServiceName = LastValue(q.Sections["Network"], "ServiceName")
 	case ".kube":
-		vals := q.Sections["Kube"]["ServiceName"]
-		if len(vals) > 0 {
-			confServiceName = vals[0]
-		}
+		confServiceName = LastValue(q.Sections["Kube"], "ServiceName")
 	}
 	if confServiceName == "" {
 		if q.Type == ".container" || q.Type == ".kube" {
@@ -423,40 +408,47 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	// Merge systemd-style drop-ins from filename.d/*.conf
 	dropInDir := path + ".d"
 	if info, err := os.Stat(dropInDir); err == nil && info.IsDir() {
-		files, _ := filepath.Glob(filepath.Join(dropInDir, "*.conf"))
+		files, err := filepath.Glob(filepath.Join(dropInDir, "*.conf"))
+		if err != nil {
+			return nil, fmt.Errorf("reading drop-in directory %s: %w", dropInDir, err)
+		}
+		slices.Sort(files) // Drop-ins are applied in name order, so a later one can override an earlier.
 		for _, f := range files {
-			_ = parseIniFile(f, q) // Merge drop-ins silently
+			// A drop-in that can't be read changes what the quadlet means; failing quietly
+			// here is how an unreadable override turns into a mystery further down.
+			if err := parseIniFile(f, q); err != nil {
+				return nil, fmt.Errorf("reading drop-in %s: %w", f, err)
+			}
 		}
 	}
 
 	// Specific checks based on parsing
 	if contSec, ok := q.Sections["Container"]; ok {
-		if val, ok := contSec["ContainerName"]; ok && len(val) > 0 {
-			q.GeneratedNames["container"] = val[0]
+		if val := LastValue(contSec, "ContainerName"); val != "" {
+			q.GeneratedNames["container"] = val
 		}
-		if val, ok := contSec["Pod"]; ok && len(val) > 0 {
-			q.ParentPod = strings.TrimSuffix(val[0], ".pod")
+		if val := LastValue(contSec, "Pod"); val != "" {
+			q.ParentPod = strings.TrimSuffix(val, ".pod")
 		}
-		if val, ok := contSec["AutoUpdate"]; ok && len(val) > 0 {
-			q.GeneratedNames["auto_update"] = val[0]
+		if val := LastValue(contSec, "AutoUpdate"); val != "" {
+			q.GeneratedNames["auto_update"] = val
 		}
 	}
 
 	if podSec, ok := q.Sections["Pod"]; ok {
-		if val, ok := podSec["PodName"]; ok && len(val) > 0 {
-			q.GeneratedNames["pod_name"] = val[0]
+		if val := LastValue(podSec, "PodName"); val != "" {
+			q.GeneratedNames["pod_name"] = val
 		}
 	}
 
 	if svcSec, ok := q.Sections["Service"]; ok {
-		if val, ok := svcSec["Restart"]; ok && len(val) > 0 {
-			q.RestartPolicy = strings.ToLower(val[0])
+		if val := LastValue(svcSec, "Restart"); val != "" {
+			q.RestartPolicy = strings.ToLower(val)
 		}
 	}
 
 	if kubeSec, ok := q.Sections["Kube"]; ok {
-		if val, ok := kubeSec["Yaml"]; ok && len(val) > 0 {
-			yamlPath := val[0]
+		if yamlPath := LastValue(kubeSec, "Yaml"); yamlPath != "" {
 			if !filepath.IsAbs(yamlPath) {
 				yamlPath = filepath.Join(filepath.Dir(q.Filepath), yamlPath)
 			}
@@ -475,7 +467,11 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	return q, nil
 }
 
-// Simple INI parser
+// parseIniFile reads one quadlet file (or drop-in) into q.Sections, recording each
+// assignment exactly as written. Nothing is tokenized here: whether a written value is one
+// value or several is a property of the option, not of the file, and only the schema knows
+// which - see OptionValues, which applies that at use time. Splitting here is what used to
+// silently drop Exec=/bin/sh -c "echo hi".
 func parseIniFile(path string, q *Quadlet) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -488,6 +484,14 @@ func parseIniFile(path string, q *Quadlet) error {
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+
+		// A trailing backslash continues the assignment on the next line, the way systemd
+		// unit files spell a long value across several.
+		for strings.HasSuffix(line, `\`) && scanner.Scan() {
+			line = strings.TrimSpace(strings.TrimSuffix(line, `\`)) + " " + strings.TrimSpace(scanner.Text())
+			line = strings.TrimSpace(line)
+		}
+
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
 			continue
 		}
@@ -500,40 +504,76 @@ func parseIniFile(path string, q *Quadlet) error {
 			continue
 		}
 
-		if currentSection != "" {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				val := strings.TrimSpace(parts[1])
-
-				//fmt.Printf("Parsing option: [%s] %s=%s\n", currentSection, key, val)
-				//Handle options specified using a multiple space-separated value format
-				values := ParseFields(val)
-				for _, v := range values {
-					q.Sections[currentSection][key] = append(q.Sections[currentSection][key], v)
-					//fmt.Printf("  Parsed value: %s\n", v)
-				}
-
-				//q.Sections[currentSection][key] = append(q.Sections[currentSection][key], val)
-			}
+		if currentSection == "" {
+			continue
 		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+
+		if val == "" {
+			// Assigning nothing resets the key, as in systemd - it is how a drop-in clears a
+			// list the base file set rather than adding to it.
+			delete(q.Sections[currentSection], key)
+			continue
+		}
+		q.Sections[currentSection][key] = append(q.Sections[currentSection][key], val)
 	}
 	return scanner.Err()
+}
+
+// OptionValues resolves the raw lines recorded for a key into the values a command should be
+// built from.
+//
+// An option the schema marks AllowMultiple may be repeated on its own line and may also carry
+// several whitespace-separated values on one line, the way quadlet reads them; quote a value
+// that contains a space. An option that takes a single value keeps its line intact, spaces
+// and all, and the last assignment wins - again as in systemd. An option the schema doesn't
+// know is treated as single-valued, since guessing the other way would split a value that was
+// never meant to be split.
+func OptionValues(options map[string]schema.SchemaOption, key string, raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	if opt, known := options[key]; !known || !opt.AllowMultiple {
+		return raw[len(raw)-1:]
+	}
+	var values []string
+	for _, line := range raw {
+		values = append(values, ParseFields(line)...)
+	}
+	return values
+}
+
+// LastValue returns the effective value of a single-valued key in a section: the last
+// assignment wins. Empty when the key was never set.
+func LastValue(section map[string][]string, key string) string {
+	vals := section[key]
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[len(vals)-1]
 }
 
 // extractDependencies determines implicit and explicit requirements
 func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 	depSet := make(map[string]bool)
 
-	// Explicit Systemd dependencies [Unit] After=/Requires=
+	// Explicit Systemd dependencies [Unit] After=/Requires=. Both take a space-separated list
+	// of units per line and may be given more than once.
 	if unit, ok := q.Sections["Unit"]; ok {
 		for _, key := range []string{"Requires", "After"} {
-			for _, val := range unit[key] {
-				// Strip systemd.service ext, and optional quadlet ext, map back to ID
-				id := strings.TrimSuffix(val, ".service")
-				id = strings.TrimSuffix(id, filepath.Ext(id))
-				if _, exists := all[id]; exists {
-					depSet[id] = true
+			for _, line := range unit[key] {
+				for _, val := range ParseFields(line) {
+					// Strip systemd.service ext, and optional quadlet ext, map back to ID
+					id := strings.TrimSuffix(val, ".service")
+					id = strings.TrimSuffix(id, filepath.Ext(id))
+					if _, exists := all[id]; exists {
+						depSet[id] = true
+					}
 				}
 			}
 		}
@@ -542,8 +582,8 @@ func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 	// Implicit dependencies [Container/Pod] Network=/Volume=/Pod=
 	if q.Type == ".container" {
 		cont := q.Sections["Container"]
-		if pod, ok := cont["Pod"]; ok && len(pod) > 0 {
-			podID := strings.TrimSuffix(pod[0], ".pod")
+		if pod := LastValue(cont, "Pod"); pod != "" {
+			podID := strings.TrimSuffix(pod, ".pod")
 			depSet[podID] = true
 			// Get the user-specified pod name for potential use in ps filters, otherwise will use pod ID as the pod name.
 			// The referenced pod file may not exist in this directory at all; the missing dependency
@@ -625,59 +665,80 @@ func topologicalSort(quadlets map[string]*Quadlet) ([]*Quadlet, error) {
 	return ordered, nil
 }
 
-// parseFields splits a space-separated string into a slice,
-// preserving spaces within quoted values.
+// ParseFields splits a written value into the argv entries it stands for, the way a shell or
+// systemd would: whitespace separates tokens, text inside matching single or double quotes is
+// one token spaces and all, and the quotes themselves are punctuation rather than content.
+//
+// Dropping the quotes here is what lets the result be handed straight to exec: an argument is
+// already exactly the bytes the program should see, so nothing downstream has to guess which
+// quotes were the user's and which were syntax.
 func ParseFields(input string) []string {
 	var fields []string
-	if len(strings.TrimSpace(input)) == 0 {
-		return fields
-	}
+	var current strings.Builder
+	var quote rune
+	quoted := false // a token can be quoted and empty: --entrypoint ""
 
-	var currentToken strings.Builder
-	inQuotes := false
-
-	for _, r := range input {
-		switch r {
-		case '"':
-			inQuotes = !inQuotes
-			// We skip writing the quote character to the builder.
-			// This automatically strips out the quotes while keeping the contents.
-			// TEMPORARY - see if writing the quotes back is the way to go
-			currentToken.WriteRune(r)
-		case ' ':
-			if inQuotes {
-				currentToken.WriteRune(r)
-			} else {
-				// Space outside of quotes terminates the current key=value pair
-				if currentToken.Len() > 0 {
-					fields = append(fields, currentToken.String())
-					currentToken.Reset()
-				}
-			}
-		default:
-			currentToken.WriteRune(r)
+	flush := func() {
+		if current.Len() > 0 || quoted {
+			fields = append(fields, current.String())
+			current.Reset()
+			quoted = false
 		}
 	}
 
-	// Catch the final pair if the string doesn't end with a trailing space
-	if currentToken.Len() > 0 {
-		fields = append(fields, currentToken.String())
+	for _, r := range input {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+		case r == '"' || r == '\'':
+			quote = r
+			quoted = true
+		case r == ' ' || r == '\t':
+			flush()
+		default:
+			current.WriteRune(r)
+		}
 	}
+	flush()
 
 	return fields
 }
 
-func QuadletOptionToPodman(qType string, options map[string]schema.SchemaOption, k string, v string) (string, error) {
-	var buf bytes.Buffer
-	if opt, ok := options[k]; ok {
-		option := Option{Key: opt.PodmanKey, Value: v}
-		err := opt.PodmanTemplateParsed.Execute(&buf, option)
-		if err != nil {
-			return "", fmt.Errorf("Error formatting %s option %s: %w", qType, k, err)
-		}
-		return buf.String(), nil
+// valuePlaceholder stands in for an option's value while its podman template is rendered, so
+// the rendered fragment can be cut into arguments without the value's own spaces being read
+// as separators. Nothing a quadlet file can contain looks like it.
+//
+// This assumes a template only ever emits the value, never branches on it - true of every
+// option in the schema, and worth rechecking if one ever grows an {{if}}.
+const valuePlaceholder = "\x00quadctl-value\x00"
+
+// QuadletOptionToPodman renders one quadlet key/value into the podman arguments it stands
+// for. A template is a command-line fragment: it may expand to a flag and its value
+// ("{{.Key}} {{.Value}}"), to a single token ("--driver={{.Value}}"), to a flag that embeds
+// the value ("--security-opt apparmor={{.Value}}"), or to a flag alone ("--read-only"). So it
+// is rendered with the placeholder, cut into arguments, and only then given the real value —
+// cutting the rendered text itself is what turned Environment=GREETING="hello world" into two
+// arguments and a container that never saw the second word.
+func QuadletOptionToPodman(qType string, options map[string]schema.SchemaOption, k string, v string) ([]string, error) {
+	opt, ok := options[k]
+	if !ok {
+		return nil, fmt.Errorf("Quadlet %s option not defined: %s", qType, k)
 	}
-	return "", fmt.Errorf("Quadlet %s option not defined: %s", qType, k)
+
+	var buf bytes.Buffer
+	if err := opt.PodmanTemplateParsed.Execute(&buf, Option{Key: opt.PodmanKey, Value: valuePlaceholder}); err != nil {
+		return nil, fmt.Errorf("Error formatting %s option %s: %w", qType, k, err)
+	}
+
+	args := ParseFields(buf.String())
+	for i, arg := range args {
+		args[i] = strings.ReplaceAll(arg, valuePlaceholder, v)
+	}
+	return args, nil
 }
 
 func readYamlFile(path string) (string, error) {

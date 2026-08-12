@@ -4,6 +4,8 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,8 +20,10 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 //
 // The golden file records today's output, defects included - the duplicated --name is
 // TODO.md section 2, still open. Fixing those should show up here as a deliberate diff.
+// shell.container is there for the value model specifically: a command line kept whole, a
+// quoted value with a space, a repeated key, a whitespace list, and a continuation.
 //
-// Regenerate with: go test ./core/ -run TestGenerateCommandsGolden -update
+// Regenerate with: go test ./internal/core/ -run TestGenerateCommandsGolden -update
 func TestGenerateCommandsGolden(t *testing.T) {
 	quadctl := &util.Quadctl{
 		Runner:         &util.RecordingRunner{},
@@ -68,12 +72,24 @@ func TestGenerateCommandsGolden(t *testing.T) {
 	}
 }
 
+// writeLine records one generated command. An argument containing whitespace is quoted, so
+// the file shows where the argv boundaries actually are: the whole point of the value model
+// (PLAN.md 3.1) is that "--env" and "GREETING=hello world" are two arguments, and a
+// space-joined line cannot tell that apart from three.
 func writeLine(b *strings.Builder, label string, argv []string) {
 	if len(argv) == 0 {
 		b.WriteString(label + "-\n")
 		return
 	}
-	b.WriteString(label + strings.Join(argv, " ") + "\n")
+	quoted := make([]string, len(argv))
+	for i, arg := range argv {
+		if strings.ContainsAny(arg, " \t") {
+			quoted[i] = strconv.Quote(arg)
+		} else {
+			quoted[i] = arg
+		}
+	}
+	b.WriteString(label + strings.Join(quoted, " ") + "\n")
 }
 
 // TestKubeDownForce covers a Phase 0.3 panic: KubeDownForce is optional, so both the
@@ -170,5 +186,71 @@ func TestGenerateStartupCommandKubeIsClean(t *testing.T) {
 	cmd, _ := generateStartupCommand(quadctl, q)
 	if got := strings.Join(cmd, " "); got != "podman play kube /tmp/app.yaml" {
 		t.Errorf("startup command = %q", got)
+	}
+}
+
+// TestExecBecomesArgv is PLAN.md 3.1's done-when, stated directly: Exec=/bin/sh -c "echo hi"
+// has to reach podman as three arguments, the last of them "echo hi". Under the old value
+// model the parser split the line into three values, generateCreateCommand saw more values
+// than the option allows and dropped it, and the container silently ran the image's default
+// command instead.
+func TestExecBecomesArgv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.container"),
+		[]byte("[Container]\nImage=alpine\nExec=/bin/sh -c \"echo hi\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	quadctl := &util.Quadctl{
+		Runner:         &util.RecordingRunner{},
+		QuadletSchemas: util.GetQuadletSchemas(),
+		SearchDir:      dir,
+	}
+	quadlets, err := util.InitQuadlets(quadctl)
+	if err != nil {
+		t.Fatalf("InitQuadlets: %v", err)
+	}
+
+	create, warnings := generateCreateCommand(quadctl, quadlets[0])
+	want := []string{"podman", "container", "create", "--name", "app", "alpine", "/bin/sh", "-c", "echo hi"}
+	if !slices.Equal(create, want) {
+		t.Errorf("create argv =\n  %#v\nwant\n  %#v", create, want)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "Exec") {
+			t.Errorf("Exec should not warn any more: %s", w)
+		}
+	}
+
+	// 'run' carries the same command through, after swapping the verb.
+	run, _ := generateRunCommand(quadctl, quadlets[0])
+	if len(run) < 3 || !slices.Equal(run[len(run)-3:], []string{"/bin/sh", "-c", "echo hi"}) {
+		t.Errorf("run argv = %#v, want it to end in the same three arguments", run)
+	}
+}
+
+// TestPodmanArgsSplitOnce covers the flip side: PodmanArgs is a command line fragment, so it
+// is split, and a quoted argument inside it stays one argument.
+func TestPodmanArgsSplitOnce(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.container"),
+		[]byte("[Container]\nImage=alpine\nPodmanArgs=--rm --label \"owner=the platform team\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	quadctl := &util.Quadctl{
+		Runner:         &util.RecordingRunner{},
+		QuadletSchemas: util.GetQuadletSchemas(),
+		SearchDir:      dir,
+	}
+	quadlets, err := util.InitQuadlets(quadctl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	create, _ := generateCreateCommand(quadctl, quadlets[0])
+	want := []string{"podman", "container", "create", "--name", "app", "--rm", "--label", "owner=the platform team", "alpine"}
+	if !slices.Equal(create, want) {
+		t.Errorf("create argv =\n  %#v\nwant\n  %#v", create, want)
 	}
 }

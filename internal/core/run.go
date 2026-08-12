@@ -19,7 +19,9 @@ func HandleRun(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, erro
 	var foregroundQuadletCommand Command
 	for _, q := range quadlets {
 		if q.Type == ".container" {
-			pArgs := q.Sections["Container"]["PodmanArgs"]
+			// PodmanArgs is written as a command line fragment, so split it before looking
+			// for the detach flag - "PodmanArgs=-d --rm" is one written value, two args.
+			pArgs := getRawPodmanArgs(q.Sections["Container"])
 			if !slices.Contains(pArgs, "--detach") && !slices.Contains(pArgs, "-d") {
 				foregroundQuadlet = q
 				nonDetachedContainers++

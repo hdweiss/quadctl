@@ -75,14 +75,9 @@ func DefaultPreFn(c *Command) {
 
 func DefaultRunFn(c *Command) {
 	if len(c.Cmd) > 0 {
-		//  If user quoted some value becuase it contained spaces, parser.ParseFields() retains quotes regardless of how often called.
-		//  They will interfere with execution, so we remove them. The exec.Command call will quote any arg that contains spaces.
-		//  In practice this means KEY="some val with spaces" will be stripped and requoted by exec.Command as "KEY=some val with spaces",
-		//  which works fine.
-		for i, arg := range c.Cmd {
-			c.Cmd[i] = strings.Trim(arg, `"`)
-		}
-
+		// c.Cmd is argv already: ParseFields resolved quoting where the value was written,
+		// so each entry is exactly the bytes the program should see. Nothing is stripped
+		// here - a quote that survived this far is one the user meant literally.
 		if isForegroundRun(c.Cmd) {
 			fmt.Printf("Running in foreground: %s\n", strings.Join(c.Cmd, " "))
 			_, c.Error = c.Runner.Run(c.Cmd, util.RunOptions{Mode: util.Interactive})
@@ -152,7 +147,7 @@ func RunCommands(quadctl *util.Quadctl, commands []Command) int {
 		fmt.Printf("\n# --- Print MODE: Commands that would be executed ---\n\n")
 		for _, c := range commands {
 			if len(c.Cmd) > 0 {
-				fmt.Println(strings.Join(c.Cmd, " "))
+				fmt.Println(ShellQuote(c.Cmd))
 			} else {
 				fmt.Printf("%s\n", c.Label)
 				for _, line := range c.Output {
@@ -320,4 +315,21 @@ func runCommandSilently(runner util.Runner, args []string) error {
 // runCommandCapture runs args and returns its stdout for parsing.
 func runCommandCapture(runner util.Runner, args []string) (string, error) {
 	return runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
+}
+
+// ShellQuote renders argv as a line that can be pasted into a shell and run. Arguments are
+// separate values internally, so anything containing whitespace or shell punctuation is
+// quoted here rather than being joined into an ambiguous string: print mode showing
+// `--env GREETING=hello world` for what is really two arguments is a command that does
+// something different when copied.
+func ShellQuote(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, arg := range argv {
+		if arg == "" || strings.ContainsAny(arg, " \t\n\"'\\$`&|;<>()*?[]#~") {
+			quoted[i] = "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
 }
