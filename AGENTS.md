@@ -6,6 +6,36 @@ This file provides guidance to AI agents when working with code in this reposito
 
 `quadctl` is a compose-like CLI for running Podman Quadlets, either directly via `podman` or installed into systemd's quadlet generator directories. It's a single Go module with no external services — read `README.md` for the full user-facing feature set (directory layout conventions, `.quadlets`/`.kube` file handling, symbolic-link install mode, etc.) before making behavioral changes, since a lot of nuance lives there rather than in code comments.
 
+`TODO.md` (known defects), `PLAN.md` (the phased refactor and its ordering constraints) and `FEATURES.md` (ideas, not scheduled) are the working docs. Check `TODO.md` before reporting a bug as new.
+
+## Running the binary safely
+
+**Read this before invoking `quadctl` for any reason.** This tool mutates the host: it copies and deletes files under the systemd quadlet generator directories, starts and stops systemd units, and removes podman containers, volumes and networks. The machine you are working on is likely to have real quadlets installed and running. Several open defects in `TODO.md` make destructive behavior easy to trigger by accident — most notably §1's "`create|start <file>` wipes the whole generator directory".
+
+Non-negotiable when running the binary:
+
+- **Never run against the real config.** Every invocation sets `QUADCTL_CONFIG_DIR` to a throwaway config directory whose `quadlet.src.path`, `quadlet.user.path` and `quadlet.root.path` all point inside your own scratch directory.
+- **Use `-p` (print mode) for `create`, `start`, `run`, `stop` and `remove`.** These generate real `podman`/`systemctl` invocations otherwise. Do not run them without `-p`.
+- **Never write to or delete from** `/etc/containers/systemd`, `~/.config/containers/systemd`, or `~/.local/quadlets`. Build fixture quadlets in your scratch directory instead.
+- **Mind the working directory.** When the CWD contains no quadlets, most commands silently widen their scope to *every* quadlet under `quadlet.src.path` (`main.go:46-83`) — so `quadctl pull` run from the repo root will pull every image on the system. `cd` into a scratch fixture directory first.
+
+Building (`go build`), testing (`go test`) and reading are unrestricted. If verifying a change appears to require breaking one of the rules above, stop and ask rather than working around it.
+
+Setting up a scratch config:
+
+```bash
+SCRATCH=<your scratch dir>
+mkdir -p "$SCRATCH"/{cfg,src,user,root}
+sed -e "s|^quadlet.src.path=.*|quadlet.src.path=$SCRATCH/src|" \
+    -e "s|^quadlet.user.path=.*|quadlet.user.path=$SCRATCH/user|" \
+    -e "s|^quadlet.root.path=.*|quadlet.root.path=$SCRATCH/root|" \
+    -e "s|^systemd.enabled.*|systemd.enabled=false|" \
+    util/config/quadctl.ini > "$SCRATCH/cfg/quadctl.ini"
+# then: QUADCTL_CONFIG_DIR=$SCRATCH/cfg ./quadctl <cmd> -p
+```
+
+The three path substitutions also remove the `{{.home}}` placeholders the shipped template carries (normally expanded when the default config is installed). Leave the `{{.user}}` variables in the `systemd.*` lines alone — those are expanded at runtime to `--user` when rootless. Setting `systemd.enabled=false` is what exercises the podman-direct path; there is currently no CLI flag to turn systemd mode off once the config enables it (`TODO.md` §3), so this is the only way to test that path.
+
 ## Commands
 
 ```bash
