@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,26 +18,50 @@ var (
 )
 
 func main() {
+	os.Exit(run())
+}
 
+// run is the whole program. It returns the process exit code and is the only place that
+// decides one: nothing below main is allowed to call os.Exit, so every failure travels back
+// here as an error and every command failure comes back as RunCommands' exit code.
+func run() int {
 	initState() //Create the initial quadctl state object
 
-	util.InitFlags(quadctl)
-	util.InitConfig(quadctl)
-	util.ProcessSubcommand(quadctl)
+	if err := util.InitFlags(quadctl); err != nil {
+		return fail(err)
+	}
+	if err := util.InitConfig(quadctl); err != nil {
+		return fail(err)
+	}
+	if err := util.ProcessSubcommand(quadctl); err != nil {
+		return fail(err)
+	}
 	quadctl.QuadletSchemas = util.GetQuadletSchemas()
 
-	quadlets := util.InitQuadlets(quadctl)
+	quadlets, err := util.InitQuadlets(quadctl)
+	if err != nil {
+		return fail(err)
+	}
 
 	// If no quadlets at this point, only list|ls is still a valid command.
 	// Abort with a message. User probably didn't notice they were neither in a quadlet directory nor specified one as argument.
 	if len(quadlets) < 1 && !(slices.Contains([]string{"list", "ls", "logs", "ps", "pull", "images", "status", "stats"}, quadctl.Subcommand)) {
-
-		err := displayQuadletSelector(quadctl)
-		if err != nil {
-			fmt.Printf("Error: No quadlets found in directory: %s\n", quadctl.SearchDir)
-			os.Exit(1)
+		if err := displayQuadletSelector(quadctl); err != nil {
+			return fail(fmt.Errorf("no quadlets found in directory: %s", quadctl.SearchDir))
 		}
-		quadlets = util.InitQuadlets(quadctl)
+		if quadlets, err = util.InitQuadlets(quadctl); err != nil {
+			return fail(err)
+		}
+	}
+
+	// Several subcommands report on every quadlet under quadlet.src.path rather than just
+	// the current directory: on -a/--all, or when the current directory turned up nothing.
+	// 'logs' widens only in the latter case - it has no -a.
+	widens := slices.Contains([]string{"ps", "stats", "status", "images", "pull"}, quadctl.Subcommand) && (quadctl.IsShowAll || len(quadlets) < 1)
+	if widens || (quadctl.Subcommand == "logs" && len(quadlets) < 1) {
+		if quadlets, err = util.InitAllQuadlets(quadctl); err != nil {
+			return fail(err)
+		}
 	}
 
 	var commands []Command
@@ -44,84 +69,82 @@ func main() {
 	// Route to appropriate subcommand handler
 	switch quadctl.Subcommand {
 	case "ps":
-		if quadctl.IsShowAll || len(quadlets) < 1 {
-			quadlets = util.InitAllQuadlets(quadctl)
-		}
-		HandlePS(quadctl, quadlets)
+		err = HandlePS(quadctl, quadlets)
 	case "stats":
-		if quadctl.IsShowAll || len(quadlets) < 1 {
-			quadlets = util.InitAllQuadlets(quadctl)
-		}
-		HandleStats(quadctl, quadlets)
+		err = HandleStats(quadctl, quadlets)
 	case "status":
-		if quadctl.IsShowAll || len(quadlets) < 1 {
-			quadlets = util.InitAllQuadlets(quadctl)
-		}
 		if quadctl.IsSystemd {
-			commands = HandleSystemdStatus(quadctl, quadlets)
+			commands, err = HandleSystemdStatus(quadctl, quadlets)
 		} else {
-			HandlePS(quadctl, quadlets)
+			err = HandlePS(quadctl, quadlets)
 		}
 	case "logs":
-		if len(quadlets) < 1 {
-			quadlets = util.InitAllQuadlets(quadctl)
-		}
 		if quadctl.IsSystemd {
-			commands = HandleSystemdLogs(quadctl, quadlets)
+			commands, err = HandleSystemdLogs(quadctl, quadlets)
 		} else {
-			commands = HandleLogs(quadctl, quadlets)
+			commands, err = HandleLogs(quadctl, quadlets)
 		}
 	case "images":
-		if quadctl.IsShowAll || len(quadlets) < 1 {
-			quadlets = util.InitAllQuadlets(quadctl)
-		}
-		HandleImages(quadctl.Runner, quadlets)
+		err = HandleImages(quadctl.Runner, quadlets)
 	case "pull":
-		if quadctl.IsShowAll || len(quadlets) < 1 {
-			quadlets = util.InitAllQuadlets(quadctl)
-		}
-		commands = HandlePull(quadctl, quadlets)
+		commands, err = HandlePull(quadctl, quadlets)
 	case "list", "ls":
-		HandleList(quadctl)
+		err = HandleList(quadctl)
 	case "create":
 		if quadctl.IsSystemd {
-			commands = HandleSystemdCreate(quadctl, quadlets)
+			commands, err = HandleSystemdCreate(quadctl, quadlets)
 		} else {
-			commands = HandleCreate(quadctl, quadlets)
+			commands, err = HandleCreate(quadctl, quadlets)
 		}
 	case "start":
 		if quadctl.IsSystemd {
-			commands = HandleSystemdStart(quadctl, quadlets)
+			commands, err = HandleSystemdStart(quadctl, quadlets)
 		} else {
-			commands = HandleStart(quadctl, quadlets)
+			commands, err = HandleStart(quadctl, quadlets)
 		}
 	case "run":
 		if quadctl.IsSystemd {
 			fmt.Printf("Running containers with systemd (ie. 'quadctl -s run') is not supported since systemd manages the lifecycle of services independently. Use 'start' to start the services and ensure your quadlets are configured to run the desired commands on startup.\n")
 		} else {
-			commands = HandleRun(quadctl, quadlets)
+			commands, err = HandleRun(quadctl, quadlets)
 		}
 	case "stop":
 		if quadctl.IsSystemd {
-			commands = HandleSystemdStop(quadctl, quadlets, false)
+			commands, err = HandleSystemdStop(quadctl, quadlets, false)
 		} else {
-			commands = HandleStop(quadctl, quadlets)
+			commands, err = HandleStop(quadctl, quadlets)
 		}
 	case "remove", "rm":
 		if quadctl.IsSystemd {
-			commands = HandleSystemdRemove(quadctl, quadlets)
+			commands, err = HandleSystemdRemove(quadctl, quadlets)
 		} else {
-			commands = HandleRemove(quadctl, quadlets)
+			commands, err = HandleRemove(quadctl, quadlets)
 		}
 	default:
+		// Unreachable: ProcessSubcommand rejects anything not in the flag-set table.
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", quadctl.Subcommand)
 		util.PrintUsage()
-		os.Exit(1)
+		return 1
+	}
+
+	if err != nil {
+		return fail(err)
 	}
 
 	if len(commands) > 0 {
-		os.Exit(RunCommands(quadctl, commands))
+		return RunCommands(quadctl, commands)
 	}
+
+	return 0
+}
+
+// fail reports err and yields the exit code for it. util.ErrUsage means usage has already
+// been printed, so it gets no second message.
+func fail(err error) int {
+	if !errors.Is(err, util.ErrUsage) {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	}
+	return 1
 }
 
 func initState() {

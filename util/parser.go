@@ -80,28 +80,25 @@ type Option struct {
 	Value string
 }
 
-func InitQuadlets(quadctl *Quadctl) []*Quadlet {
+func InitQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
 	// Discover, parse and resolve dependencies
 	quadlets, err := discoverAndParseQuadlets(quadctl, quadctl.SearchDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error processing quadlets in %s: %v\n", quadctl.SearchDir, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("processing quadlets in %s: %w", quadctl.SearchDir, err)
 	}
 
 	// If user specified the -f flag, the path provided should be a quadlet file, rather than directory. Only process the specified file and its dependencies.
 	var selectedQuadlets []*Quadlet
 	if quadctl.IsFile {
 		if quadctl.PathArg == "" {
-			fmt.Fprintf(os.Stderr, "Error: -f/--file requires the path of a quadlet file\n")
-			os.Exit(1)
+			return nil, fmt.Errorf("-f/--file requires the path of a quadlet file")
 		}
 		// If a file was specified, find the corresponding quadlet
 		name := filepath.Base(quadctl.PathArg)
 		tmp := strings.TrimSuffix(name, filepath.Ext(name))
 		selected := quadlets[tmp]
 		if selected == nil {
-			fmt.Fprintf(os.Stderr, "Error: quadlet %s not found in %s\n", name, quadctl.SearchDir)
-			os.Exit(1)
+			return nil, fmt.Errorf("quadlet %s not found in %s", name, quadctl.SearchDir)
 		}
 		selectedQuadlets = append(selectedQuadlets, selected)
 		if len(selected.Deps) > 0 {
@@ -120,27 +117,23 @@ func InitQuadlets(quadctl *Quadctl) []*Quadlet {
 		quadlets = selectedQuadletsMap
 	}
 
-	//quadlets := util.InitQuadlets()
-
 	// Topologically sort quadlets based on dependencies
 	ordered, err := topologicalSort(quadlets)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error determining ordering: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("determining ordering: %w", err)
 	}
 
-	return ordered
+	return ordered, nil
 }
 
 // InitAllQuadlets discovers and parses quadlets across every subdirectory of the
 // configured quadlet source path, returning the combined list. Used by commands
 // like 'ps' that report on all quadlets managed by quadctl when no specific
 // quadlet name or path was given on the command line.
-func InitAllQuadlets(quadctl *Quadctl) []*Quadlet {
+func InitAllQuadlets(quadctl *Quadctl) ([]*Quadlet, error) {
 	dirs, err := ListSubdirectories(quadctl.QuadletSrcPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error listing quadlets in %s: %v\n", quadctl.QuadletSrcPath, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("listing quadlets in %s: %w", quadctl.QuadletSrcPath, err)
 	}
 
 	origSearchDir := quadctl.SearchDir
@@ -156,10 +149,14 @@ func InitAllQuadlets(quadctl *Quadctl) []*Quadlet {
 	var all []*Quadlet
 	for _, d := range dirs {
 		quadctl.SearchDir = filepath.Join(quadctl.QuadletSrcPath, d)
-		all = append(all, InitQuadlets(quadctl)...)
+		quadlets, err := InitQuadlets(quadctl)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, quadlets...)
 	}
 
-	return all
+	return all, nil
 }
 
 // --- PARSING AND GENERATION LOGIC ---
@@ -218,8 +215,7 @@ func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Q
 				path := filepath.Join(searchDir, f.Name())
 				newPath := filepath.Join(quadctl.DotQuadletsPath, f.Name())
 				if err := CopyDir(path, newPath); err != nil {
-					fmt.Fprintf(os.Stderr, " Error copying drop-in directory %s to %s: %v\n", path, newPath, err)
-					os.Exit(1)
+					return nil, fmt.Errorf("copying drop-in directory %s to %s: %w", path, newPath, err)
 				}
 				continue
 			}
@@ -233,8 +229,7 @@ func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Q
 			//fmt.Printf("Calling CopyFile for: %s\n", f.Name())
 			newPath := filepath.Join(quadctl.DotQuadletsPath, f.Name())
 			if err := CopyFile(path, newPath); err != nil {
-				fmt.Fprintf(os.Stderr, " Error copying %s to temporary .quadlets processing path %s: %v\n", path, newPath, err)
-				os.Exit(1)
+				return nil, fmt.Errorf("copying %s to temporary .quadlets processing path %s: %w", path, newPath, err)
 			}
 		}
 		searchDir = quadctl.DotQuadletsPath
@@ -258,11 +253,9 @@ func discoverAndParseQuadlets(quadctl *Quadctl, searchDir string) (map[string]*Q
 		if extensions[ext] {
 			q, err := parseQuadlet(path)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, " Error parsing %s: %v\n", path, err)
-				os.Exit(1)
-			} else {
-				quadlets[q.ID] = q
+				return nil, fmt.Errorf("parsing %s: %w", path, err)
 			}
+			quadlets[q.ID] = q
 		}
 	}
 
@@ -332,8 +325,7 @@ func parseDotQuadlets(path string) (string, error) {
 		quadletText += line + "\n"
 	}
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading .quadlets file: %v\n", err)
-		os.Exit(1)
+		return "", fmt.Errorf("reading .quadlets file %s: %w", path, err)
 	}
 
 	// Save file if reach end of .quadlet file with a filename and quadlet text
@@ -478,28 +470,17 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	if kubeSec, ok := q.Sections["Kube"]; ok {
 		if val, ok := kubeSec["Yaml"]; ok && len(val) > 0 {
 			yamlPath := val[0]
-			if filepath.IsAbs(yamlPath) {
-				info, err := os.Stat(yamlPath)
-				if err != nil || info.IsDir() {
-					fmt.Printf("Invalid YAML file: %s", yamlPath)
-					os.Exit(1)
-				}
-			} else {
-				dir := filepath.Dir(q.Filepath)
-				joinedPath := filepath.Join(dir, yamlPath)
-				info, err := os.Stat(joinedPath)
-				if err != nil || info.IsDir() {
-					fmt.Printf("Invalid YAML file: %s", joinedPath)
-					os.Exit(1)
-				}
-				yamlPath = joinedPath
+			if !filepath.IsAbs(yamlPath) {
+				yamlPath = filepath.Join(filepath.Dir(q.Filepath), yamlPath)
+			}
+			if info, err := os.Stat(yamlPath); err != nil || info.IsDir() {
+				return nil, fmt.Errorf("Yaml= does not name a readable file: %s", yamlPath)
 			}
 			q.KubernetesYaml = yamlPath
 		}
 		resources, err := readK8sYaml(q.KubernetesYaml)
 		if err != nil {
-			fmt.Printf("Failed to read K8s yaml file: %v\n", err)
-			os.Exit(1)
+			return nil, err
 		}
 		q.KubeResources = resources
 	}
@@ -756,15 +737,6 @@ func QuadletOptionToPodman(qType string, options map[string]schema.SchemaOption,
 	return "", fmt.Errorf("Quadlet %s option not defined: %s", qType, k)
 }
 
-/*
-func main() {
-	resources, _ := readK8sYaml("/tmp/test.yaml")
-	for _, res := range resources {
-		fmt.Printf("Type: %s\nName: %s\nImage: %s\n", res["type"], res["name"], res["image"])
-	}
-}
-*/
-
 func readYamlFile(path string) (string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -784,25 +756,20 @@ func readK8sYaml(yamlPath string) ([]map[string]interface{}, error) {
 	var pod map[string]interface{}
 	path, err := yaml.PathString("$.kind")
 	if err != nil {
-		fmt.Printf("Error creating YAML path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("creating YAML path: %w", err)
 	}
 	if err := path.Read(strings.NewReader(yml), &kind); err != nil {
-		fmt.Printf("Error reading kind YAML path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("reading kind from %s: %w", yamlPath, err)
 	}
 	if kind != "Pod" {
-		fmt.Printf("Unsupported Kubernetes resource kind: %s\n", kind)
-		os.Exit(1)
+		return nil, fmt.Errorf("%s: unsupported Kubernetes resource kind: %s", yamlPath, kind)
 	}
 	path, err = yaml.PathString("$.metadata")
 	if err != nil {
-		fmt.Printf("Error creating YAML path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("creating YAML path: %w", err)
 	}
 	if err := path.Read(strings.NewReader(yml), &pod); err != nil {
-		fmt.Printf("Error reading metadata YAML path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("reading metadata from %s: %w", yamlPath, err)
 	}
 	pod["type"] = "pod"
 	//pod["name"] comes as part of $.metadata
@@ -811,12 +778,10 @@ func readK8sYaml(yamlPath string) ([]map[string]interface{}, error) {
 	var containers []map[string]interface{}
 	path, err = yaml.PathString("$.spec.containers[*]")
 	if err != nil {
-		fmt.Printf("Error creating YAML path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("creating YAML path: %w", err)
 	}
 	if err := path.Read(strings.NewReader(yml), &containers); err != nil {
-		fmt.Printf("Error reading containers YAML path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("reading containers from %s: %w", yamlPath, err)
 	}
 	for i := range containers {
 		containers[i]["type"] = "container"

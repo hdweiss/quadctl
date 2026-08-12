@@ -14,12 +14,11 @@ import (
 //go:embed config/quadctl.ini
 var files embed.FS
 
-func InitConfig(quadctl *Quadctl) {
+func InitConfig(quadctl *Quadctl) error {
 	// Read config
 	config, err := GetConfig(quadctl)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	if val, ok := config["use_subdirectories"]; ok && (val == "false" || val == "0") {
 		quadctl.UseSubdirectories = false
@@ -48,21 +47,28 @@ func InitConfig(quadctl *Quadctl) {
 	if val, ok := config["systemd.enabled"]; ok && (val == "true" || val == "1") {
 		quadctl.IsSystemd = true
 	}
-	if val, ok := config["systemd.start"]; ok && val != "" {
-		quadctl.SystemdStartTmpl = template.Must(template.New("systemdStart").Parse(val))
+	for _, t := range []struct {
+		key  string
+		dest **template.Template
+	}{
+		{"systemd.start", &quadctl.SystemdStartTmpl},
+		{"systemd.stop", &quadctl.SystemdStopTmpl},
+		{"systemd.status", &quadctl.SystemdStatusTmpl},
+		{"systemd.reload", &quadctl.SystemdReloadTmpl},
+		{"systemd.logs", &quadctl.SystemdLogsTmpl},
+	} {
+		val, ok := config[t.key]
+		if !ok || val == "" {
+			continue
+		}
+		parsed, err := template.New(t.key).Parse(val)
+		if err != nil {
+			return fmt.Errorf("config key %s is not a valid template: %w", t.key, err)
+		}
+		*t.dest = parsed
 	}
-	if val, ok := config["systemd.stop"]; ok && val != "" {
-		quadctl.SystemdStopTmpl = template.Must(template.New("systemdStop").Parse(val))
-	}
-	if val, ok := config["systemd.status"]; ok && val != "" {
-		quadctl.SystemdStatusTmpl = template.Must(template.New("systemdStatus").Parse(val))
-	}
-	if val, ok := config["systemd.reload"]; ok && val != "" {
-		quadctl.SystemdReloadTmpl = template.Must(template.New("systemdReload").Parse(val))
-	}
-	if val, ok := config["systemd.logs"]; ok && val != "" {
-		quadctl.SystemdLogsTmpl = template.Must(template.New("systemdLogs").Parse(val))
-	}
+
+	return nil
 }
 
 func GetConfig(quadctl *Quadctl) (map[string]string, error) {
@@ -88,15 +94,16 @@ func GetConfig(quadctl *Quadctl) (map[string]string, error) {
 
 	// Create quadlet config directory if not exists
 	if err := createDirIfNotExists(path); err != nil {
-		fmt.Printf("Config directory (%s) not found and could not be created: %v\n", path, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("config directory (%s) not found and could not be created: %w", path, err)
 	}
 
 	path = filepath.Join(path, "quadctl.ini")
 
 	_, err := os.Stat(path)
 	if err != nil {
-		installDefaultConfig(path)
+		if err := installDefaultConfig(path); err != nil {
+			return nil, err
+		}
 	}
 
 	file, err := os.Open(path)
@@ -121,41 +128,40 @@ func GetConfig(quadctl *Quadctl) (map[string]string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading config: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
 	// Check if user quadlet locations all exist and create if not.
 	if err := createDirIfNotExists(config["quadlet.src.path"]); err != nil {
-		fmt.Printf("Configured quadlet.src.path not found and could not be created: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("configured quadlet.src.path not found and could not be created: %w", err)
 	}
 	if err := createDirIfNotExists(config["quadlet.user.path"]); err != nil {
-		fmt.Printf("Configured quadlet.user.path not found and could not be created: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("configured quadlet.user.path not found and could not be created: %w", err)
 	}
 
 	return config, nil
 }
 
-func installDefaultConfig(path string) {
+func installDefaultConfig(path string) error {
 	fileData, _ := files.ReadFile("config/quadctl.ini")
 	//fmt.Printf("In installDefaultConfig(%s):\n%s\n", path, string(fileData))
 	data := map[string]string{}
 	data["home"] = os.Getenv("HOME")
 	data["user"] = "{{.user}}"
 
-	t := template.Must(template.New("config").Parse(string(fileData)))
-	var err error
-	if f, err := os.Create(path); err == nil {
-		if err = t.Execute(f, data); err == nil {
-			return
+	t, err := template.New("config").Parse(string(fileData))
+	if err == nil {
+		var f *os.File
+		if f, err = os.Create(path); err == nil {
+			defer f.Close()
+			if err = t.Execute(f, data); err == nil {
+				return nil
+			}
 		}
 	}
 	//If unsuccessful, write default config to standard out so user can add it manually.
-	fmt.Printf("Error: Unable to create default config.ini at %s: %v\n", path, err)
 	fmt.Printf("Writing default config.ini contents to standard out. Replace {{.home}} with user home directory.\n  DO NOT replace {{.user}} template variable.\n\n%s\n", string(fileData))
-	os.Exit(1)
+	return fmt.Errorf("unable to create default config.ini at %s: %w", path, err)
 }
 
 func createDirIfNotExists(path string) error {

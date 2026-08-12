@@ -1,12 +1,18 @@
 package util
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// ErrUsage reports an invocation quadctl can't act on - no subcommand, or one it doesn't
+// know. Usage has already been printed by the time it is returned, so the caller should
+// exit non-zero without printing anything further.
+var ErrUsage = errors.New("invalid invocation")
 
 // Consts and Config
 const (
@@ -15,7 +21,7 @@ const (
 
 var flagSets map[string]*flag.FlagSet
 
-func InitFlags(quadctl *Quadctl) {
+func InitFlags(quadctl *Quadctl) error {
 
 	flagSets = map[string]*flag.FlagSet{}
 
@@ -155,8 +161,10 @@ func InitFlags(quadctl *Quadctl) {
 
 	if flag.NArg() < 1 {
 		PrintUsage()
-		os.Exit(1)
+		return ErrUsage
 	}
+
+	return nil
 }
 
 func PrintUsage() {
@@ -322,28 +330,36 @@ func PrintLogsUsage() {
 	fmt.Fprintf(os.Stderr, "  Use sudo for rootless quadlets.\n")
 }
 
-func ProcessSubcommand(quadctl *Quadctl) {
+func ProcessSubcommand(quadctl *Quadctl) error {
 	quadctl.Subcommand = strings.ToLower(flag.Arg(0))
-	if flagSet, ok := flagSets[quadctl.Subcommand]; ok {
-		flagSet.Parse(flag.Args()[1:])
-		// The path argument belongs to the subcommand's own FlagSet, not the global one -
-		// flag.Arg(1) would be whatever flag happened to follow the subcommand.
-		quadctl.PathArg = flagSet.Arg(0)
-		quadctl.SearchDir = getSearchDir(quadctl, quadctl.PathArg)
-	} else {
+	flagSet, ok := flagSets[quadctl.Subcommand]
+	if !ok {
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", quadctl.Subcommand)
-		os.Exit(1)
+		PrintUsage()
+		return ErrUsage
 	}
+
+	flagSet.Parse(flag.Args()[1:])
+	// The path argument belongs to the subcommand's own FlagSet, not the global one -
+	// flag.Arg(1) would be whatever flag happened to follow the subcommand.
+	quadctl.PathArg = flagSet.Arg(0)
+
+	searchDir, err := getSearchDir(quadctl, quadctl.PathArg)
+	if err != nil {
+		return err
+	}
+	quadctl.SearchDir = searchDir
+
+	return nil
 }
 
-func getSearchDir(quadctl *Quadctl, path string) string {
+func getSearchDir(quadctl *Quadctl, path string) (string, error) {
 
 	// Determine search directory (optional path or CWD ... optional path may be relative to CWD or quadlets_path from config)
 	// If no path is specified, use the current working directory
 	dir, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting CWD: %v\n", err)
-		os.Exit(1)
+		return "", fmt.Errorf("getting current working directory: %w", err)
 	}
 	// If a path is specified, determine if relative to CWD or quadlet.src.path
 	if path != "" {
@@ -367,8 +383,7 @@ func getSearchDir(quadctl *Quadctl, path string) string {
 					dir = filepath.Dir(dir)
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: %s not found\n", path)
-				os.Exit(1)
+				return "", fmt.Errorf("%s not found", path)
 			}
 		}
 		// Always absolutize. Downstream code derives the systemd install subdirectory from
@@ -376,11 +391,10 @@ func getSearchDir(quadctl *Quadctl, path string) string {
 		// itself and take every unrelated quadlet installed there with it.
 		abs, err := filepath.Abs(dir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error resolving path %s: %v\n", dir, err)
-			os.Exit(1)
+			return "", fmt.Errorf("resolving path %s: %w", dir, err)
 		}
 		dir = abs
 	}
 
-	return dir
+	return dir, nil
 }

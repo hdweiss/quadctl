@@ -22,7 +22,7 @@ import (
 
 // --- CORE LOGIC HANDLERS ---
 
-func HandlePull(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandlePull(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -51,13 +51,13 @@ func HandlePull(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		commands = append(commands, c)
 	}
 
-	return commands
+	return commands, nil
 	//RunCommands(quadctl, commands)
 }
 
 // handleCreate generates and executes 'podman create' commands for all resources, but first checks if they exist and prints warnings if they do,
 // suggesting to run 'remove' first if intent is to re-create. It also handles special cases like auto-restart configuration warnings.
-func HandleCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -106,22 +106,28 @@ func HandleCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 			}
 		}
 	}
-	return commands
+	return commands, nil
 }
 
 // Call handleCreate. Then start.
-func HandleStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
 	//Create, if necessary
-	cmds := HandleCreate(quadctl, quadlets)
+	cmds, err := HandleCreate(quadctl, quadlets)
+	if err != nil {
+		return nil, err
+	}
 	commands = append(commands, cmds...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
 	if info, err := getContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
 		if strings.Contains(info[0][3], "Up") {
-			cmd := HandleStop(quadctl, quadlets)
+			cmd, err := HandleStop(quadctl, quadlets)
+			if err != nil {
+				return nil, err
+			}
 			commands = append(commands, cmd...)
 		}
 	}
@@ -146,11 +152,11 @@ func HandleStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 			commands = append(commands, c)
 		}
 	}
-	return commands
+	return commands, nil
 }
 
 // Call handleCreate. Then start.
-func HandleRun(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleRun(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	//Check how many .container quadlets there are and how many with --detach or -d podman args.
 	//If more than one .container and more than one of them don't have --detach or -d,
@@ -168,14 +174,16 @@ func HandleRun(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		}
 	}
 	if nonDetachedContainers > 1 {
-		fmt.Fprintf(os.Stderr, "Error: 'quadctl run' can only run one container in the foreground. Add --detach or -d to PodmanArgs for all other .container quadlets. Execute quadctl run --help for details.\n")
-		os.Exit(1)
+		return nil, fmt.Errorf("'quadctl run' can only run one container in the foreground. Add --detach or -d to PodmanArgs for all other .container quadlets. Execute quadctl run --help for details")
 	}
 
 	commands := []Command{}
 
 	//Create non-container resources, if necessary (HandleCreate will skip .container quadlets for the 'run' command, but create volumes, networks, pods if needed)
-	c := HandleCreate(quadctl, quadlets)
+	c, err := HandleCreate(quadctl, quadlets)
+	if err != nil {
+		return nil, err
+	}
 	commands = append(commands, c...)
 
 	//Start
@@ -213,10 +221,10 @@ func HandleRun(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		// Run the foreground container command last since it will block and we want all other containers to be up before it runs.
 		commands = append(commands, foregroundQuadletCommand)
 	}
-	return commands
+	return commands, nil
 }
 
-func HandleStop(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleStop(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -237,10 +245,10 @@ func HandleStop(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 			commands = append(commands, c)
 		}
 	}
-	return commands
+	return commands, nil
 }
 
-func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -277,10 +285,10 @@ func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		c.Cmd = rmCmd
 		commands = append(commands, c)
 	}
-	return commands
+	return commands, nil
 }
 
-func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -292,27 +300,24 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 		targetDir = quadctl.QuadletUserPath
 	}
 
+	// The rootless hint is worth keeping alongside the error itself: the usual cause is a
+	// generator directory owned by root that the user was told to install into.
+	rootlessHint := ""
+	if targetDir == quadctl.QuadletUserPath {
+		rootlessHint = "\nIf installing rootless quadlets to /etc/containers/systemd... or /usr/share/containers/systemd... you may need to grant your user write permissions to the target directory."
+	}
+
 	// Ensure permissions to write to the target directory
 	fileInfo, err := os.Stat(targetDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error accessing quadlet path %s: %v.\n", targetDir, err)
-		if targetDir == quadctl.QuadletUserPath {
-			fmt.Fprintf(os.Stderr, "If installing rootless quadlets to /etc/... or /run/... you may need to grant your user write permissions to the target directory.\n")
-		}
-		os.Exit(1)
-	} else {
-		if !fileInfo.IsDir() {
-			fmt.Fprintf(os.Stderr, "Quadlet path %s is not a directory. Ensure the path points to a directory and try again.\n", targetDir)
-			os.Exit(1)
-		}
-		perm := fileInfo.Mode().Perm()
-		if perm&0200 != 0200 && perm&0020 != 0020 && perm&0002 != 0002 {
-			fmt.Fprintf(os.Stderr, "Quadlet path %s is not writable. Ensure the directory is writable and try again.\n", targetDir)
-			if targetDir == quadctl.QuadletUserPath {
-				fmt.Fprintf(os.Stderr, "If installing rootless quadlets to /etc/containers/systemd... or /usr/share/containers/systemd... you may need to grant your user write permissions to the target directory.\n")
-			}
-			os.Exit(1)
-		}
+		return nil, fmt.Errorf("accessing quadlet path %s: %w%s", targetDir, err, rootlessHint)
+	}
+	if !fileInfo.IsDir() {
+		return nil, fmt.Errorf("quadlet path %s is not a directory. Ensure the path points to a directory and try again", targetDir)
+	}
+	perm := fileInfo.Mode().Perm()
+	if perm&0200 != 0200 && perm&0020 != 0020 && perm&0002 != 0002 {
+		return nil, fmt.Errorf("quadlet path %s is not writable. Ensure the directory is writable and try again%s", targetDir, rootlessHint)
 	}
 
 	c := NewCommand(fmt.Sprintf("Systemd installing quadlets to %s", targetDir))
@@ -324,13 +329,15 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 	// Systemd create is mostly file operations.
 	// For file operations, we use golang functions rather than podman, systemd or bash commands ...
 	// Encapsulate code to run in a slice of functions that will be executed in a custom command when the command is run.
-	funcs := []func(){}
+	// Each step reports its own failure; the command stops at the first one rather than
+	// carrying on with a half-installed directory.
+	funcs := []func() error{}
 	c.Output = append(c.Output, fmt.Sprintf("Creating target directory %s", targetDir))
-	f := func() {
+	f := func() error {
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating target directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("creating target directory %s: %w", targetDir, err)
 		}
+		return nil
 	}
 	funcs = append(funcs, f)
 
@@ -341,8 +348,7 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 		searchDir = quadctl.DotQuadletsPath
 		//Check for and disallow use of symbolic links with .quadlets files
 		if quadctl.UseSymbolicLinks {
-			fmt.Fprintf(os.Stderr, "Error: Cannot use symbolic links with .quadlets files.\n  The individual quadlets in a .quadlets file must be extracted to a temp directory before install to systemd.\n  Cannot link to temp directory.\n")
-			os.Exit(1)
+			return nil, fmt.Errorf("cannot use symbolic links with .quadlets files.\n  The individual quadlets in a .quadlets file must be extracted to a temp directory before install to systemd.\n  Cannot link to temp directory")
 		}
 	}
 
@@ -353,12 +359,11 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 			// Link the entire source directory as a subdirectory in the target location to keep related quadlets together
 			dest := filepath.Join(targetDir, filepath.Base(searchDir))
 			c.Output = append(c.Output, fmt.Sprintf("Linking directory %s -> %s", dest, searchDir))
-			f := func() {
+			f := func() error {
 				if err := os.Symlink(searchDir, dest); err != nil {
-					//if err := runCommand(quadctl.Runner, []string{prefix, "ln", "-s", sourceDir, filepath.Join(targetDir, filepath.Base(sourceDir))}); err != nil {
-					fmt.Fprintf(os.Stderr, "Error linking target directory: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("linking %s -> %s: %w", dest, searchDir, err)
 				}
+				return nil
 			}
 			funcs = append(funcs, f)
 		} else {
@@ -366,12 +371,11 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 			for _, q := range quadlets {
 				dest := filepath.Join(targetDir, filepath.Base(q.Filepath))
 				c.Output = append(c.Output, fmt.Sprintf("Linking %s -> %s", dest, q.Filepath))
-				f := func() {
+				f := func() error {
 					if err := os.Symlink(q.Filepath, dest); err != nil {
-						//if err := runCommand(quadctl.Runner, []string{prefix, "ln", "-s", q.Filepath, dest}); err != nil {
-						fmt.Fprintf(os.Stderr, " Failed to link: %v\n", err)
-						os.Exit(1)
+						return fmt.Errorf("linking %s -> %s: %w", dest, q.Filepath, err)
 					}
+					return nil
 				}
 				funcs = append(funcs, f)
 				// Also link drop-in directory if exists
@@ -379,12 +383,11 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 				if info, err := os.Stat(dropInDir); err == nil && info.IsDir() {
 					destDropIn := dest + ".d"
 					c.Output = append(c.Output, fmt.Sprintf("Linking directory %s -> %s", destDropIn, dropInDir))
-					f := func() {
+					f := func() error {
 						if err := os.Symlink(dropInDir, destDropIn); err != nil {
-							//if err := runCommand(quadctl.Runner, []string{prefix, "ln", "-s", dropInDir, destDropIn}); err != nil {
-							fmt.Fprintf(os.Stderr, "  Failed to link dir: %v\n", err)
-							os.Exit(1)
+							return fmt.Errorf("linking drop-in directory %s -> %s: %w", destDropIn, dropInDir, err)
 						}
+						return nil
 					}
 					funcs = append(funcs, f)
 				}
@@ -398,21 +401,21 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 			//Create the subdirectory at target location
 			dest := filepath.Join(targetDir, filepath.Base(searchDir))
 			c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", filepath.Base(searchDir), dest))
-			f := func() {
+			f := func() error {
 				if err := util.CopyDir(searchDir, dest); err != nil {
-					fmt.Fprintf(os.Stderr, "  Failed to copy dir: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("copying %s to %s: %w", searchDir, dest, err)
 				}
+				return nil
 			}
 			funcs = append(funcs, f)
 		} else {
 			for _, q := range quadlets {
 				c.Output = append(c.Output, fmt.Sprintf("Copying file %s to %s", filepath.Base(q.Filepath), filepath.Join(targetDir, filepath.Base(q.Filepath))))
-				f := func() {
+				f := func() error {
 					if err := util.CopyFile(q.Filepath, filepath.Join(targetDir, filepath.Base(q.Filepath))); err != nil {
-						fmt.Fprintf(os.Stderr, "  Failed to copy file: %v\n", err)
-						os.Exit(1)
+						return fmt.Errorf("copying %s: %w", q.Filepath, err)
 					}
+					return nil
 				}
 				funcs = append(funcs, f)
 			}
@@ -429,11 +432,11 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 					destDropIn = filepath.Join(targetDir, filepath.Base(q.Filepath)+".d")
 				}
 				c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", filepath.Base(dropInDir), destDropIn))
-				f := func() {
+				f := func() error {
 					if err := util.CopyDir(dropInDir, destDropIn); err != nil {
-						fmt.Fprintf(os.Stderr, "  Failed to copy dir: %v\n", err)
-						os.Exit(1)
+						return fmt.Errorf("copying drop-in directory %s to %s: %w", dropInDir, destDropIn, err)
 					}
+					return nil
 				}
 				funcs = append(funcs, f)
 			}
@@ -443,7 +446,10 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 	// Custom run function that will, when executed by runCommands(), execute the anonymous functions created above.
 	c.RunFn = func(c *Command) {
 		for _, f := range funcs {
-			f()
+			if err := f(); err != nil {
+				c.Error = err
+				return
+			}
 		}
 		if quadctl.IsVerbose {
 			fmt.Println(c.Label + "... Done")
@@ -464,13 +470,21 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 	// Stop and remove any previously installed quadlet files that no longer exist
 	// in the source directory, so deletions are reflected the same way edits are.
 	if !quadctl.UseSymbolicLinks {
-		commands = append(commands, pruneStaleSystemdFiles(quadctl, targetDir, searchDir)...)
+		stale, err := pruneStaleSystemdFiles(quadctl, targetDir, searchDir)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, stale...)
 	}
 
 	// Reload systemd to recognize the new quadlet services
-	commands = append(commands, HandleSystemdReload(quadctl)...)
+	reload, err := HandleSystemdReload(quadctl)
+	if err != nil {
+		return nil, err
+	}
+	commands = append(commands, reload...)
 
-	return commands
+	return commands, nil
 }
 
 // pruneStaleSystemdFiles finds files under the installed subdirectory for searchDir
@@ -480,11 +494,11 @@ func HandleSystemdCreate(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 // installed into a dedicated subdirectory per source directory (UseSubdirectories);
 // without that, the installed directory is shared across unrelated quadlet groups and
 // there's no reliable way to tell which leftover files belong to this one.
-func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) []Command {
+func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) ([]Command, error) {
 	commands := []Command{}
 
 	if !quadctl.UseSubdirectories {
-		return commands
+		return commands, nil
 	}
 
 	// Refuse to prune unless the install destination is a real subdirectory of the generator
@@ -494,22 +508,22 @@ func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) 
 	base := filepath.Base(searchDir)
 	if base == "." || base == ".." || base == "" || base == string(filepath.Separator) {
 		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - cannot derive an install subdirectory from source path %q\n", searchDir)
-		return commands
+		return commands, nil
 	}
 
 	dest := filepath.Join(targetDir, base)
 	if filepath.Clean(dest) == filepath.Clean(targetDir) {
 		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - install directory %s is the quadlet generator root\n", dest)
-		return commands
+		return commands, nil
 	}
 
 	destEntries, err := os.ReadDir(dest)
 	if err != nil {
-		return commands
+		return commands, nil
 	}
 	srcEntries, err := os.ReadDir(searchDir)
 	if err != nil {
-		return commands
+		return commands, nil
 	}
 
 	present := map[string]bool{}
@@ -529,7 +543,11 @@ func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) 
 		// deleting it so podman cleans up the resources it created.
 		if !e.IsDir() && util.IsQuadletExtension(filepath.Ext(name)) {
 			if stale, err := util.ParseQuadletFile(stalePath); err == nil {
-				commands = append(commands, HandleSystemdStop(quadctl, []*util.Quadlet{stale}, true)...)
+				stop, err := HandleSystemdStop(quadctl, []*util.Quadlet{stale}, true)
+				if err != nil {
+					return nil, err
+				}
+				commands = append(commands, stop...)
 			}
 		}
 
@@ -545,7 +563,7 @@ func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) 
 		commands = append(commands, cmd)
 	}
 
-	return commands
+	return commands, nil
 }
 
 // quadletGeneratorPaths are the well-known install locations of podman's quadlet generator
@@ -684,17 +702,13 @@ func validateQuadletGenerationCommand(quadctl *util.Quadctl, quadlets []*util.Qu
 			return // Failure doesn't involve any quadlet we just installed (e.g. an unrelated pre-existing file).
 		}
 
-		fmt.Fprintf(os.Stderr, "\nError: podman could not generate systemd units for the following quadlet(s):\n\n")
-		for _, p := range problems {
-			fmt.Fprintf(os.Stderr, "  %s\n", p)
-		}
-		fmt.Fprintf(os.Stderr, "\nFix the issue(s) above in the quadlet file and try again.\n")
-		os.Exit(1)
+		c.Error = fmt.Errorf("podman could not generate systemd units for the following quadlet(s):\n\n  %s\n\nFix the issue(s) above in the quadlet file and try again",
+			strings.Join(problems, "\n  "))
 	}
 	return c
 }
 
-func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 	//Ideally, call handleInstall if needed. How to check if the required systemd services are installed?
 	/*
 		❯ sudo podman quadlet list
@@ -711,12 +725,18 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comma
 	// CopyFile/CopyDir overwrite existing files in place, so this is a no-op cost
 	// wise when nothing has changed. HandleSystemdCreate also reloads systemd
 	// after copying so the generator picks up any changes.
-	cmd := HandleSystemdCreate(quadctl, quadlets)
+	cmd, err := HandleSystemdCreate(quadctl, quadlets)
+	if err != nil {
+		return nil, err
+	}
 	commands = append(commands, cmd...)
 
 	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
 	if info, err := getContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
-		cmd := HandleSystemdStop(quadctl, quadlets, false)
+		cmd, err := HandleSystemdStop(quadctl, quadlets, false)
+		if err != nil {
+			return nil, err
+		}
 		commands = append(commands, cmd...)
 	}
 
@@ -724,10 +744,8 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comma
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
 
-	err := quadctl.SystemdStartTmpl.Execute(&buf, data)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing systemd start template: %v\n", err)
-		os.Exit(1)
+	if err = quadctl.SystemdStartTmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("executing systemd start template: %w", err)
 	}
 
 	// Only start the pod and any loose containers
@@ -742,20 +760,18 @@ func HandleSystemdStart(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comma
 
 		// For networks and volumes, we rely on the fact that systemd will start them automatically when the containers that depend on them are started.
 	}
-	return commands
+	return commands, nil
 }
 
-func HandleSystemdStop(quadctl *util.Quadctl, quadlets []*util.Quadlet, stopNetAndVol bool) []Command {
+func HandleSystemdStop(quadctl *util.Quadctl, quadlets []*util.Quadlet, stopNetAndVol bool) ([]Command, error) {
 
 	commands := []Command{}
 
 	// Stop the systemd services
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
-	err := quadctl.SystemdStopTmpl.Execute(&buf, data)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing systemd stop template: %v\n", err)
-		os.Exit(1)
+	if err := quadctl.SystemdStopTmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("executing systemd stop template: %w", err)
 	}
 
 	for _, q := range quadlets {
@@ -779,10 +795,10 @@ func HandleSystemdStop(quadctl *util.Quadctl, quadlets []*util.Quadlet, stopNetA
 		cmd.Cmd = args
 		commands = append(commands, cmd)
 	}
-	return commands
+	return commands, nil
 }
 
-func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 	var targetDir string
 	if quadctl.IsRootful {
 		targetDir = quadctl.QuadletRootPath
@@ -793,7 +809,10 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 	commands := []Command{}
 
 	// Ensure any running services are stopped before uninstalling
-	cmds := HandleSystemdStop(quadctl, quadlets, true)
+	cmds, err := HandleSystemdStop(quadctl, quadlets, true)
+	if err != nil {
+		return nil, err
+	}
 	commands = append(commands, cmds...)
 
 	// Systemd removal is mostly file operations.
@@ -917,23 +936,24 @@ func HandleSystemdRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 	commands = append(commands, c)
 
 	// Reload systemd to ensure it picks up the changes after removal.
-	cmds = HandleSystemdReload(quadctl)
+	cmds, err = HandleSystemdReload(quadctl)
+	if err != nil {
+		return nil, err
+	}
 	commands = append(commands, cmds...)
 
-	return commands
+	return commands, nil
 }
 
-func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	if quadctl.IsLongStatus {
 		commands := []Command{}
 
 		var buf bytes.Buffer
 		data := systemdTemplateData(quadctl)
-		err := quadctl.SystemdStatusTmpl.Execute(&buf, data)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error executing systemd status template: %v\n", err)
-			os.Exit(1)
+		if err := quadctl.SystemdStatusTmpl.Execute(&buf, data); err != nil {
+			return nil, fmt.Errorf("executing systemd status template: %w", err)
 		}
 		args := util.ParseFields(buf.String())
 		for _, q := range quadlets {
@@ -946,14 +966,16 @@ func HandleSystemdStatus(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comm
 		} else {
 			runCommand(quadctl.Runner, args)
 		}
-		return commands
+		return commands, nil
 	} else {
-		displayListOfSystemdInstalledQuadlets(quadctl, quadlets)
-		return []Command{}
+		if err := displayListOfSystemdInstalledQuadlets(quadctl, quadlets); err != nil {
+			return nil, err
+		}
+		return []Command{}, nil
 	}
 }
 
-func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	commands := []Command{}
 
@@ -975,18 +997,15 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 		}
 		selected, err := util.SelectFromList(names)
 		if err != nil {
-			fmt.Printf("Error selecting service: %v\n", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("selecting service: %w", err)
 		}
 		serviceName = selected
 	}
 
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
-	err := quadctl.SystemdLogsTmpl.Execute(&buf, data)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing systemd logs: %v\n", err)
-		os.Exit(1)
+	if err := quadctl.SystemdLogsTmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("executing systemd logs template: %w", err)
 	}
 
 	cmd := util.ParseFields(buf.String())
@@ -1000,29 +1019,26 @@ func HandleSystemdLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Comman
 	} else {
 		runCommand(quadctl.Runner, cmd)
 	}
-	return commands
+	return commands, nil
 }
 
-func HandleSystemdReload(quadctl *util.Quadctl) []Command {
+func HandleSystemdReload(quadctl *util.Quadctl) ([]Command, error) {
 	var buf bytes.Buffer
 	data := systemdTemplateData(quadctl)
-	err := quadctl.SystemdReloadTmpl.Execute(&buf, data)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing systemd reload template: %v\n", err)
-		os.Exit(1)
+	if err := quadctl.SystemdReloadTmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("executing systemd reload template: %w", err)
 	}
 	command := util.ParseFields(buf.String())
 	cmd := NewCommand("Reloading systemd")
 	cmd.Cmd = command
-	return []Command{cmd}
+	return []Command{cmd}, nil
 }
 
-func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
+func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
 
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return
+		return err
 	}
 
 	t := table.NewWriter()
@@ -1050,19 +1066,19 @@ func HandlePS(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
 	}
 	t.SetStyle(table.StyleColoredYellowWhiteOnBlack)
 	t.Render()
+
+	return nil
 }
 
-func HandleStats(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
+func HandleStats(quadctl *util.Quadctl, quadlets []*util.Quadlet) error {
 
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return
+		return err
 	}
 
 	if len(psInfo) < 1 {
-		fmt.Printf("Error: Found no containers running or created that are related to quadlets in directory: %s\n", quadctl.SearchDir)
-		os.Exit(1)
+		return fmt.Errorf("found no containers running or created that are related to quadlets in directory: %s", quadctl.SearchDir)
 	}
 
 	//cmd := []string{"podman", "stats", "--no-stream"}
@@ -1073,10 +1089,10 @@ func HandleStats(quadctl *util.Quadctl, quadlets []*util.Quadlet) {
 		cmd = append(cmd, id)
 	}
 
-	_ = runCommand(quadctl.Runner, cmd)
+	return runCommand(quadctl.Runner, cmd)
 }
 
-func HandleImages(runner util.Runner, quadlets []*util.Quadlet) {
+func HandleImages(runner util.Runner, quadlets []*util.Quadlet) error {
 
 	//REPOSITORY                                 TAG         IMAGE ID      CREATED       SIZE
 	cmd := []string{"podman", "images", "--noheading", "--filter", "reference=ADD_ID_HERE", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Created}}|{{.Size}}"}
@@ -1085,8 +1101,7 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) {
 	// Fetch image info for each container
 	psInfo, err := getContainerPS(runner, quadlets)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return
+		return err
 	}
 
 	if len(psInfo) > 0 {
@@ -1187,9 +1202,11 @@ func HandleImages(runner util.Runner, quadlets []*util.Quadlet) {
 	}
 	t.SetStyle(table.StyleColoredYellowWhiteOnBlack)
 	t.Render()
+
+	return nil
 }
 
-func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
+func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
 
 	var commands []Command
 
@@ -1200,7 +1217,7 @@ func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 	psInfo, err := getContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return commands
+		return commands, nil
 	}
 
 	if len(psInfo) > 0 {
@@ -1213,8 +1230,7 @@ func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 			}
 			selected, err := util.SelectFromList(names)
 			if err != nil {
-				fmt.Printf("Error getting container info: %v\n", err)
-				os.Exit(1)
+				return nil, fmt.Errorf("selecting container: %w", err)
 			}
 			containerName = selected
 		}
@@ -1228,7 +1244,7 @@ func HandleLogs(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 	} else {
 		runCommand(quadctl.Runner, cmd)
 	}
-	return commands
+	return commands, nil
 }
 
 func HandleList(quadctl *util.Quadctl) error {
@@ -1244,20 +1260,10 @@ func HandleList(quadctl *util.Quadctl) error {
 		}
 		return listQuadlets(absPath, quadctl.ListDepth)
 	} else {
-		err := listQuadlets(quadctl.QuadletSrcPath, quadctl.ListDepth)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error listing quadlets in search directory: %v\n", err)
-			os.Exit(1)
-		}
-		err = listQuadlets(quadctl.QuadletRootPath, quadctl.ListDepth)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error listing quadlets in search directory: %v\n", err)
-			os.Exit(1)
-		}
-		err = listQuadlets(quadctl.QuadletUserPath, quadctl.ListDepth)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error listing quadlets in search directory: %v\n", err)
-			os.Exit(1)
+		for _, path := range []string{quadctl.QuadletSrcPath, quadctl.QuadletRootPath, quadctl.QuadletUserPath} {
+			if err := listQuadlets(path, quadctl.ListDepth); err != nil {
+				return fmt.Errorf("listing quadlets in %s: %w", path, err)
+			}
 		}
 		return nil
 	}
@@ -1269,14 +1275,10 @@ func listQuadlets(absPath string, depth int) error {
 	if err != nil {
 		//try to create the directory
 		if err = os.MkdirAll(absPath, 0660); err != nil {
-			fmt.Printf("Error: Failed to stat configured quadlet.src.path: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("%s does not exist and could not be created: %w", absPath, err)
 		}
-	} else {
-		if !info.IsDir() {
-			fmt.Printf("Error: Configured quadlet.src.path is not a directory: %s\n", absPath)
-			os.Exit(1)
-		}
+	} else if !info.IsDir() {
+		return fmt.Errorf("configured quadlet path is not a directory: %s", absPath)
 	}
 
 	lw := list.NewWriter()

@@ -94,23 +94,3 @@ func SelectFromList(items []string) (string, error) {
 
 	return "", fmt.Errorf("no item was selected")
 }
-
-/*
-func main() {
-	// Example usage
-	options := []string{
-		"Initialize database",
-		"Run migrations",
-		"Start server",
-		"Run test suite",
-	}
-
-	selected, err := SelectFromList(options)
-	if err != nil {
-		fmt.Printf("Operation cancelled or failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("\nYou selected: %s\n", selected)
-}
-*/

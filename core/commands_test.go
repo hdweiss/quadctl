@@ -37,7 +37,11 @@ func TestHandleStopArgv(t *testing.T) {
 	quadctl, runner := newTestQuadctl("stop")
 	quadlets := []*util.Quadlet{container("web", "web"), container("db", "db")}
 
-	if code := RunCommands(quadctl, HandleStop(quadctl, quadlets)); code != 0 {
+	cmds, err := HandleStop(quadctl, quadlets)
+	if err != nil {
+		t.Fatalf("HandleStop: %v", err)
+	}
+	if code := RunCommands(quadctl, cmds); code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
 
@@ -53,7 +57,11 @@ func TestHandleRemoveArgv(t *testing.T) {
 	quadctl, runner := newTestQuadctl("remove")
 	quadlets := []*util.Quadlet{container("web", "web")}
 
-	RunCommands(quadctl, HandleRemove(quadctl, quadlets))
+	cmds, err := HandleRemove(quadctl, quadlets)
+	if err != nil {
+		t.Fatalf("HandleRemove: %v", err)
+	}
+	RunCommands(quadctl, cmds)
 
 	want := []string{"podman container rm -f web"}
 	if got := runner.Commands(); strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -66,7 +74,11 @@ func TestRunCommandsPrintOnlyRunsNothing(t *testing.T) {
 	quadctl, runner := newTestQuadctl("stop")
 	quadctl.IsPrintOnly = true
 
-	RunCommands(quadctl, HandleStop(quadctl, []*util.Quadlet{container("web", "web")}))
+	cmds, err := HandleStop(quadctl, []*util.Quadlet{container("web", "web")})
+	if err != nil {
+		t.Fatalf("HandleStop: %v", err)
+	}
+	RunCommands(quadctl, cmds)
 
 	if len(runner.Invocations) != 0 {
 		t.Errorf("print mode ran %d command(s): %q", len(runner.Invocations), runner.Commands())
