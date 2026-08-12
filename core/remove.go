@@ -1,0 +1,47 @@
+package core
+
+import (
+	"fmt"
+
+	"github.com/fkmiec/quadctl/util"
+)
+
+func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) ([]Command, error) {
+
+	commands := []Command{}
+
+	// Reverse order for safe removal
+	for i := len(quadlets) - 1; i >= 0; i-- {
+		q := quadlets[i]
+		resType := q.Type
+		resName := q.ID
+		if q.Type == ".container" {
+			resName = q.GeneratedNames["container"]
+		} else if q.Type == ".pod" {
+			resName = q.GeneratedNames["pod_name"]
+		}
+
+		rmCmd := []string{"podman"}
+		switch resType {
+		case ".kube":
+			if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || kubeDownForce(q) {
+				rmCmd = append(rmCmd, "play", "kube", "--down", "--force", q.KubernetesYaml)
+			} else {
+				rmCmd = append(rmCmd, "play", "kube", "--down", q.KubernetesYaml)
+			}
+		case ".container":
+			rmCmd = append(rmCmd, "container", "rm", "-f", resName)
+		case ".pod":
+			rmCmd = append(rmCmd, "pod", "rm", "-f", resName)
+		case ".network":
+			rmCmd = append(rmCmd, "network", "rm", resName)
+		case ".volume":
+			rmCmd = append(rmCmd, "volume", "rm", resName)
+		}
+
+		c := NewCommand(fmt.Sprintf("Removing %s %s", resType, resName))
+		c.Cmd = rmCmd
+		commands = append(commands, c)
+	}
+	return commands, nil
+}

@@ -72,10 +72,21 @@ Four packages, each with a distinct responsibility:
     `RecordingRunner` in tests, which records invocations and answers from a canned table.
     Do not reach for `exec.Command` directly in `core` or `util`.
 - **`schema`** — a hand-built, declarative model of every Quadlet/Podman option (`container.go`, `pod.go`, `network.go`, `volume.go`, `kube.go`, `build.go`, `image.go`). Each `opt*()` function returns a `SchemaOption` describing one key: its Quadlet-file spelling, its Podman CLI equivalent, a Go `text/template` for rendering each into command args, and a validator. `validator.go` implements the regex/format validation referenced by schema options. This schema is what lets `core` translate parsed quadlet key/values into the right `podman <verb>` arguments — when Podman/Quadlet adds or changes an option, this is where support gets added, not in `core`.
-- **`core`** — command execution:
-  - `commands.go` — the generic `Command` struct (spinner + run + output capture) and `RunCommands`, the shared execution/print-only/verbose-warnings loop used by every handler. `RunCommands` returns the process exit code: 0, or the failing command's own status. `pull`/`create`/`start`/`run` abort at the first failure; teardown and query subcommands run everything and report at the end.
-  - `handlers.go` — one `Handle*` pair per subcommand, each returning `([]Command, error)`
-    (or just `error` for the ones that print rather than generate commands): a non-systemd version that shells out to `podman` directly (walking the sorted quadlet list and calling `generateCreateCommand`/`generateStartupCommand`/etc., which consult the `schema` package to build args) and a `HandleSystemd*` version that installs/removes quadlet files under `QuadletRootPath`/`QuadletUserPath` and drives `systemctl`/`journalctl` via the configurable templates on `Quadctl`.
+- **`core`** — command execution. One `Handle*` pair per subcommand, each returning
+  `([]Command, error)` (or just `error` for the ones that print rather than generate
+  commands): a non-systemd version that shells out to `podman` directly (walking the sorted
+  quadlet list and calling `generateCreateCommand`/`generateStartupCommand`/etc., which
+  consult the `schema` package to build args) and a `HandleSystemd*` version that
+  installs/removes quadlet files under `QuadletRootPath`/`QuadletUserPath` and drives
+  `systemctl`/`journalctl` via the configurable templates on `Quadctl`. One file per
+  subcommand (`PLAN.md` 2.1):
+  - `command.go` — the generic `Command` struct (spinner + run + output capture) and `RunCommands`, the shared execution/print-only/verbose-warnings loop used by every handler. `RunCommands` returns the process exit code: 0, or the failing command's own status. `pull`/`create`/`start`/`run` abort at the first failure; teardown and query subcommands run everything and report at the end.
+  - `pull.go`, `create.go`, `start.go`, `run.go`, `stop.go`, `remove.go` — the podman-direct handlers.
+  - `systemd_install.go` — `HandleSystemdCreate`/`HandleSystemdRemove`, stale-file pruning, and the podman quadlet generator dry-run validation.
+  - `systemd_lifecycle.go` — `HandleSystemdStart`/`Stop`/`Status`/`Logs`/`Reload` and the systemd command templating.
+  - `inspect.go` — `HandlePS`/`HandleStats`/`HandleImages`/`HandleLogs`. `list.go` — the `list`/`ls` tree.
+  - `generate.go` — the four command generators, the only place quadlet key/values become podman argv.
+  - `podman.go` — the read-only podman/systemctl queries (`resourceExists`, `getContainerPS`, `listSystemdInstalledQuadlets`).
 
 ### Key control flow
 
