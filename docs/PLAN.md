@@ -4,7 +4,7 @@ Companion to `TODO.md` (the defect list) and `FEATURES.md` (the parking lot). Th
 order of operations: refactor, not rewrite, with two contained subsystem rewrites along
 the way.
 
-**Status:** Phases 0 through 3 are done. Next up is Phase 4.
+**Status:** Phases 0 through 4 are done. Next up is Phase 5.
 
 ## Principles
 
@@ -207,7 +207,7 @@ it.
 
 ---
 
-## Phase 4 — Consistency and UX
+## Phase 4 — Consistency and UX — **done**
 
 The `TODO.md` §2–§4 long tail, now cheap and test-backed. Grouped by theme so each lands as
 one coherent change:
@@ -226,6 +226,32 @@ one coherent change:
   errors and on Ctrl-C, "nothing to do" messages instead of silence.
 - **Path/permission hygiene (S).** `list` no longer creates directories, `0660` → `0755`,
   preserve source file modes, recurse in `CopyDir`, create `quadlet.root.path`.
+
+**The rule the naming work settled on:** quadlet's own — the explicit
+`ContainerName=`/`PodName=`/`VolumeName=`/`NetworkName=` when the file gives one,
+`systemd-<id>` when it doesn't. It is the only rule that can hold on both paths, because
+under `-s` the generator picks the names and quadctl only gets to agree with it. Resolved
+once at parse time into `Quadlet.ResourceName`, with `Volume=`/`Network=`/`Pod=` references
+resolving through `Quadlet.RefNames` to whatever the referenced quadlet is called. Documented
+in `README.md` under "Resource naming". *This changes what a plain `quadctl create` names
+things:* a container that used to be `web` is now `systemd-web`, so existing direct-mode
+resources are orphaned by the upgrade.
+
+*Two things this turned up that the plan didn't anticipate:* the suffix matching in
+`getContainerPS` was not an independent defect but the cover for the naming divergence —
+`HasSuffix("systemd-web", "web")` is what made it work at all — so fixing the names is what
+made exact matching possible. And references between quadlets needed resolving too: keeping
+`Volume=data.volume:/srv` as `-v data:/srv` while the volume was created as `systemd-data`
+would have moved the divergence rather than removed it.
+
+**Left open, and why.** These are §2–§4 items outside the five themes, each a separate defect
+rather than part of one of these changes: `list` still ignores its `[path]` argument while
+validating it (honour it or reject it — a decision, not a fix), `.image`/`.build` quadlets are
+still not in the extension map, `[Pod] Volume=` is still not a dependency, the k8s YAML reader
+still handles only a single document, `podman quadlet list` output is still split on `,`, the
+writability check still tests permission bits rather than access, `status`/`logs` still bypass
+the command pipeline, and which subcommand takes which flag is still uneven (`-a` still means
+two different things). All still tracked in `TODO.md`.
 
 ---
 
@@ -317,8 +343,8 @@ Phase 1  seams         ──▶ runner iface → errors → determinism → tes
 Phase 2  moves         ──▶ split files → registry → housekeeping          done
 Phase 2.5 internal/    ──▶ pure rename                                    done
 Phase 3  rewrites      ──▶ value model → state split                      done
-Phase 4  consistency   ──▶ naming → matching → config → output → paths     next
-Phase 5  docs/release
+Phase 4  consistency   ──▶ naming → matching → config → output → paths    done
+Phase 5  docs/release                                                      next
 Phase 6  go idiom      ──▶ util split → package docs → lint → release → tasks
                           (6.3–6.5 are independent; they can land any time)
 ```
