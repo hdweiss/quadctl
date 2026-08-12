@@ -256,7 +256,7 @@ func HandleRemove(quadctl *util.Quadctl, quadlets []*util.Quadlet) []Command {
 		rmCmd := []string{"podman"}
 		switch resType {
 		case ".kube":
-			if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || q.Sections["Kube"]["KubeDownForce"][0] == "true" {
+			if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || kubeDownForce(q) {
 				rmCmd = append(rmCmd, "play", "kube", "--down", "--force", q.KubernetesYaml)
 			} else {
 				rmCmd = append(rmCmd, "play", "kube", "--down", q.KubernetesYaml)
@@ -1155,14 +1155,20 @@ func HandleImages(quadlets []*util.Quadlet) {
 			} else if q.Type == ".kube" {
 				for _, res := range q.KubeResources {
 					if res["type"] == "container" {
-						name := strings.TrimSpace(res["image"].(string)) // IMAGE ID from quadlet file
+						// A container in the k8s YAML may have no image: key at all
+						image, ok := res["image"].(string)
+						if !ok {
+							continue
+						}
+						name := strings.TrimSpace(image) // IMAGE ID from quadlet file
 						if len(name) < 12 {
 							continue
 						}
 						cmd[4] = "reference=" + name
 						output, err := runCommandCapture(cmd)
 						if err != nil {
-							fmt.Fprintf(os.Stderr, "Error fetching image info for .kube %s container %s: %v\n", q.ID, res["name"].(string), err)
+							resName, _ := res["name"].(string)
+							fmt.Fprintf(os.Stderr, "Error fetching image info for .kube %s container %s: %v\n", q.ID, resName, err)
 							continue
 						}
 						lines := strings.Split(output, "\n")
@@ -1639,6 +1645,13 @@ func generateRunCommand(quadctl *util.Quadctl, q *util.Quadlet) ([]string, []str
 	}
 
 	createCmd, warnings := generateCreateCommand(quadctl, q)
+	// generateCreateCommand returns an empty slice when it can't build a command (missing
+	// schema, unhandled type), so there's nothing to strip the 'podman container create'
+	// prefix from.
+	if len(createCmd) < 3 {
+		warnings = append(warnings, fmt.Sprintf("Could not generate a run command for %s", q.ID))
+		return nil, warnings
+	}
 	runCmd := []string{"podman", "run"}
 	runCmd = append(runCmd, createCmd[3:]...) // Replace 'podman container create' with 'podman run'
 
@@ -1656,7 +1669,7 @@ func generateStopCommand(quadctl *util.Quadctl, q *util.Quadlet) []string {
 
 	switch q.Type {
 	case ".kube":
-		if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || q.Sections["Kube"]["KubeDownForce"][0] == "true" {
+		if quadctl.IsRemoveVolumes || quadctl.IsRemoveNetworks || kubeDownForce(q) {
 			cmd = append(cmd, []string{"podman", "play", "kube", "--down", "--force", q.KubernetesYaml}...)
 		} else {
 			cmd = append(cmd, []string{"podman", "play", "kube", "--down", q.KubernetesYaml}...)
@@ -1670,6 +1683,13 @@ func generateStopCommand(quadctl *util.Quadctl, q *util.Quadlet) []string {
 		}
 	}
 	return cmd
+}
+
+// kubeDownForce reports whether a .kube quadlet sets KubeDownForce=true. The key is
+// optional, so the section and the value slice may both be absent.
+func kubeDownForce(q *util.Quadlet) bool {
+	vals := q.Sections["Kube"]["KubeDownForce"]
+	return len(vals) > 0 && strings.EqualFold(vals[0], "true")
 }
 
 // Helper: Get raw PodmanArgs securely
@@ -1790,7 +1810,11 @@ func getContainerPS(quadlets []*util.Quadlet) ([][]string, error) {
 			}
 			if q.Type == ".kube" {
 				for _, res := range q.KubeResources {
-					if res["type"] == "container" && strings.HasSuffix(parts[1], res["name"].(string)) || (res["pod"] != nil && strings.HasSuffix(parts[2], res["pod"].(string))) {
+					// Names come from user-supplied k8s YAML, so neither key is guaranteed
+					// to be present or a string.
+					resName, hasName := res["name"].(string)
+					podName, hasPod := res["pod"].(string)
+					if (res["type"] == "container" && hasName && strings.HasSuffix(parts[1], resName)) || (hasPod && strings.HasSuffix(parts[2], podName)) {
 						psInfo = append(psInfo, parts)
 						break
 					}

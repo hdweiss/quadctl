@@ -574,10 +574,12 @@ func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 		if pod, ok := cont["Pod"]; ok && len(pod) > 0 {
 			podID := strings.TrimSuffix(pod[0], ".pod")
 			depSet[podID] = true
-			// Get the user-specified pod name for potential use in ps filters, otherwise will use pod ID as the pod name
-			podName := all[podID].GeneratedNames["pod_name"]
-			if podName == "" {
-				podName = podID
+			// Get the user-specified pod name for potential use in ps filters, otherwise will use pod ID as the pod name.
+			// The referenced pod file may not exist in this directory at all; the missing dependency
+			// is reported by topologicalSort, so here just fall back to the ID.
+			podName := podID
+			if parent, ok := all[podID]; ok && parent.GeneratedNames["pod_name"] != "" {
+				podName = parent.GeneratedNames["pod_name"]
 			}
 			q.GeneratedNames["pod_name"] = podName
 		}
