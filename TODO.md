@@ -166,7 +166,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
 - [x] **Leftover debug print** — `fmt.Printf("generateStartupCommand(%s): %v\n", …)`
   fires on every `.kube` start (`core/handlers.go:1563`).
 
-- [ ] **`HandleList`'s error is discarded** at the call site (`main.go:85`).
+- [x] **`HandleList`'s error is discarded** at the call site (`main.go:85`).
 
 - [x] **Detached `podman run` is treated as foreground** (`core/commands.go:49`, `:70`, `:86`).
   `slices.Contains(c.Cmd,"run") && (!slices.Contains(c.Cmd,"-d") || !slices.Contains(c.Cmd,"--detach"))`
@@ -201,6 +201,8 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   supported (multi-document YAML is the norm for `podman kube play`), and every failure is
   an `os.Exit(1)` with a bare message. A `[Kube]` section without `Yaml=` calls
   `readK8sYaml("")` and dies with a confusing error.
+  *Partly addressed by `PLAN.md` 1.2:* the failures are errors now, naming the file. The
+  discarded read error and single-document limitation are still open.
 
 - [ ] **`podman quadlet list` output is split on `,`** (`core/handlers.go:1688`) — breaks on
   any path containing a comma. The systemctl fallback puts `ServiceName` in the
@@ -287,11 +289,14 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `:1824`) and the spinner runs regardless of TTY. Support `NO_COLOR`/`--no-color` and
   detect a non-TTY.
 
-- [ ] **Fatal errors inside a running spinner leave it mid-animation.**
+- [x] **Fatal errors inside a running spinner leave it mid-animation.**
   `HandleSystemdCreate`'s file operations `os.Exit(1)` from inside `RunFn` while the spinner
   is spinning (`core/handlers.go:329`, `:357`, `:370`, `:402`, `:411`, `:432`) —
   `validateQuadletGenerationCommand` documents this exact problem and works around it
-  locally (`:616-618`) instead of fixing it globally. Same on Ctrl-C: no signal handler.
+  locally (`:616-618`) instead of fixing it globally.
+  *Fixed by `PLAN.md` 1.2:* those file operations and the generator validation now report a
+  failed command instead of exiting, so the spinner is always torn down. **Still open:**
+  Ctrl-C has no signal handler (`PLAN.md` Phase 4, Output).
 
 - [ ] **`quadctl logs` with nothing running runs `podman logs` with no arguments.** **[verified]**
   Output: `Error: specify at least one container name or ID to log`, exit 0
@@ -362,9 +367,10 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   table would collapse them and structurally fix the "unknown command" duplication, the
   `-s`-placement problem and the copy-paste flag drift above.
 
-- [ ] **Stop calling `os.Exit` from library code** — 54 call sites across `util/` and
+- [x] **Stop calling `os.Exit` from library code** — 54 call sites across `util/` and
   `core/`. It makes handlers untestable, skips temp-dir cleanup, and is why exit codes are
-  inconsistent. Return errors; let `main` decide the exit code.
+  inconsistent. Return errors; let `main` decide the exit code. *(`PLAN.md` 1.2 — the count
+  was 60 by the time it was done; `main()` is now the only exit.)*
 
 - [ ] **Factor out the repeated "resolve display name for a quadlet" block** — the same
   `resName/resType` derivation appears at `core/handlers.go:132-138`, `185-190`, `226-230`,
