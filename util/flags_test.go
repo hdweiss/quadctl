@@ -52,21 +52,21 @@ func TestGetSearchDir(t *testing.T) {
 	quadctl := &Quadctl{QuadletSrcPath: src}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := getSearchDir(quadctl, tt.arg)
+			got, err := ResolveSearchDir(quadctl, tt.arg)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("getSearchDir(%q) = %q, want an error", tt.arg, got)
+					t.Fatalf("ResolveSearchDir(%q) = %q, want an error", tt.arg, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("getSearchDir(%q): %v", tt.arg, err)
+				t.Fatalf("ResolveSearchDir(%q): %v", tt.arg, err)
 			}
 			if !filepath.IsAbs(got) {
-				t.Errorf("getSearchDir(%q) = %q, which is not absolute", tt.arg, got)
+				t.Errorf("ResolveSearchDir(%q) = %q, which is not absolute", tt.arg, got)
 			}
 			if got != tt.want {
-				t.Errorf("getSearchDir(%q) = %q, want %q", tt.arg, got, tt.want)
+				t.Errorf("ResolveSearchDir(%q) = %q, want %q", tt.arg, got, tt.want)
 			}
 		})
 	}

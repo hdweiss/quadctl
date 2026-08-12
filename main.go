@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"text/template"
 
-	. "github.com/fkmiec/quadctl/core"
-	. "github.com/fkmiec/quadctl/schema"
+	"github.com/fkmiec/quadctl/core"
+	"github.com/fkmiec/quadctl/schema"
 	"github.com/fkmiec/quadctl/util"
 )
+
+// defaultListDepth is the depth 'list' walks when -d is not given: enough to show the
+// quadlet directories under a configured path, not the files inside them.
+const defaultListDepth = 2
 
 var (
 	quadctl *util.Quadctl
@@ -24,16 +27,21 @@ func main() {
 // run is the whole program. It returns the process exit code and is the only place that
 // decides one: nothing below main is allowed to call os.Exit, so every failure travels back
 // here as an error and every command failure comes back as RunCommands' exit code.
+//
+// The subcommand itself comes from the registry in registry.go - what flags it takes, what
+// it does with an empty search directory, and which handler runs.
 func run() int {
 	initState() //Create the initial quadctl state object
 
-	if err := util.InitFlags(quadctl); err != nil {
+	registry := newRegistry(quadctl)
+	if err := registry.parseGlobalFlags(os.Args[1:]); err != nil {
 		return fail(err)
 	}
 	if err := util.InitConfig(quadctl); err != nil {
 		return fail(err)
 	}
-	if err := util.ProcessSubcommand(quadctl); err != nil {
+	cmd, err := registry.processSubcommand(quadctl)
+	if err != nil {
 		return fail(err)
 	}
 	quadctl.QuadletSchemas = util.GetQuadletSchemas()
@@ -43,9 +51,9 @@ func run() int {
 		return fail(err)
 	}
 
-	// If no quadlets at this point, only list|ls is still a valid command.
-	// Abort with a message. User probably didn't notice they were neither in a quadlet directory nor specified one as argument.
-	if len(quadlets) < 1 && !(slices.Contains([]string{"list", "ls", "logs", "ps", "pull", "images", "status", "stats"}, quadctl.Subcommand)) {
+	// Nothing to act on and nothing to report on: the user probably didn't notice they were
+	// neither in a quadlet directory nor named one. Offer the ones under quadlet.src.path.
+	if len(quadlets) < 1 && cmd.NeedsQuadlets {
 		if err := displayQuadletSelector(quadctl); err != nil {
 			return fail(fmt.Errorf("no quadlets found in directory: %s", quadctl.SearchDir))
 		}
@@ -57,90 +65,30 @@ func run() int {
 	// Several subcommands report on every quadlet under quadlet.src.path rather than just
 	// the current directory: on -a/--all, or when the current directory turned up nothing.
 	// 'logs' widens only in the latter case - it has no -a.
-	widens := slices.Contains([]string{"ps", "stats", "status", "images", "pull"}, quadctl.Subcommand) && (quadctl.IsShowAll || len(quadlets) < 1)
-	if widens || (quadctl.Subcommand == "logs" && len(quadlets) < 1) {
+	if (cmd.WidensOnAll && quadctl.IsShowAll) || (cmd.WidensWhenEmpty && len(quadlets) < 1) {
 		if quadlets, err = util.InitAllQuadlets(quadctl); err != nil {
 			return fail(err)
 		}
 	}
 
-	var commands []Command
-
-	// Route to appropriate subcommand handler
-	switch quadctl.Subcommand {
-	case "ps":
-		err = HandlePS(quadctl, quadlets)
-	case "stats":
-		err = HandleStats(quadctl, quadlets)
-	case "status":
-		if quadctl.IsSystemd {
-			commands, err = HandleSystemdStatus(quadctl, quadlets)
-		} else {
-			err = HandlePS(quadctl, quadlets)
-		}
-	case "logs":
-		if quadctl.IsSystemd {
-			commands, err = HandleSystemdLogs(quadctl, quadlets)
-		} else {
-			commands, err = HandleLogs(quadctl, quadlets)
-		}
-	case "images":
-		err = HandleImages(quadctl.Runner, quadlets)
-	case "pull":
-		commands, err = HandlePull(quadctl, quadlets)
-	case "list", "ls":
-		err = HandleList(quadctl)
-	case "create":
-		if quadctl.IsSystemd {
-			commands, err = HandleSystemdCreate(quadctl, quadlets)
-		} else {
-			commands, err = HandleCreate(quadctl, quadlets)
-		}
-	case "start":
-		if quadctl.IsSystemd {
-			commands, err = HandleSystemdStart(quadctl, quadlets)
-		} else {
-			commands, err = HandleStart(quadctl, quadlets)
-		}
-	case "run":
-		if quadctl.IsSystemd {
-			fmt.Printf("Running containers with systemd (ie. 'quadctl -s run') is not supported since systemd manages the lifecycle of services independently. Use 'start' to start the services and ensure your quadlets are configured to run the desired commands on startup.\n")
-		} else {
-			commands, err = HandleRun(quadctl, quadlets)
-		}
-	case "stop":
-		if quadctl.IsSystemd {
-			commands, err = HandleSystemdStop(quadctl, quadlets, false)
-		} else {
-			commands, err = HandleStop(quadctl, quadlets)
-		}
-	case "remove", "rm":
-		if quadctl.IsSystemd {
-			commands, err = HandleSystemdRemove(quadctl, quadlets)
-		} else {
-			commands, err = HandleRemove(quadctl, quadlets)
-		}
-	default:
-		// Unreachable: ProcessSubcommand rejects anything not in the flag-set table.
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", quadctl.Subcommand)
-		util.PrintUsage()
-		return 1
-	}
-
+	commands, err := cmd.dispatch(quadctl, quadlets)
 	if err != nil {
 		return fail(err)
 	}
 
 	if len(commands) > 0 {
-		return RunCommands(quadctl, commands)
+		return core.RunCommands(quadctl, commands)
 	}
 
 	return 0
 }
 
 // fail reports err and yields the exit code for it. util.ErrUsage means usage has already
-// been printed, so it gets no second message.
+// been printed, so it gets no second message; errHelp means the user asked for it.
 func fail(err error) int {
+	if errors.Is(err, errHelp) {
+		return 0
+	}
 	if !errors.Is(err, util.ErrUsage) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	}
@@ -150,7 +98,7 @@ func fail(err error) int {
 func initState() {
 
 	quadctl = &util.Quadctl{
-		QuadletSchemas:    map[string]map[string]SchemaOption{},
+		QuadletSchemas:    map[string]map[string]schema.SchemaOption{},
 		Config:            map[string]string{},
 		Runner:            util.ExecRunner{},
 		IsRootful:         false,
@@ -158,7 +106,7 @@ func initState() {
 		IsPrintOnly:       false,
 		IsVerbose:         false,
 		IsFile:            false,
-		ListDepth:         2,
+		ListDepth:         defaultListDepth,
 		Subcommand:        "",
 		SearchDir:         "",
 		PodmanArgs:        "",

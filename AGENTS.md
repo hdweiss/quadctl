@@ -17,7 +17,7 @@ Non-negotiable when running the binary:
 - **Never run against the real config.** Every invocation sets `QUADCTL_CONFIG_DIR` to a throwaway config directory whose `quadlet.src.path`, `quadlet.user.path` and `quadlet.root.path` all point inside your own scratch directory.
 - **Use `-p` (print mode) for `create`, `start`, `run`, `stop` and `remove`.** These generate real `podman`/`systemctl` invocations otherwise. Do not run them without `-p`.
 - **Never write to or delete from** `/etc/containers/systemd`, `~/.config/containers/systemd`, or `~/.local/quadlets`. Build fixture quadlets in your scratch directory instead.
-- **Mind the working directory.** When the CWD contains no quadlets, most commands silently widen their scope to *every* quadlet under `quadlet.src.path` (`main.go:46-83`) — so `quadctl pull` run from the repo root will pull every image on the system. `cd` into a scratch fixture directory first.
+- **Mind the working directory.** When the CWD contains no quadlets, most commands silently widen their scope to *every* quadlet under `quadlet.src.path` (the `WidensWhenEmpty` rows in `registry.go`) — so `quadctl pull` run from the repo root will pull every image on the system. `cd` into a scratch fixture directory first.
 
 Building (`go build`), testing (`go test`) and reading are unrestricted. If verifying a change appears to require breaking one of the rules above, stop and ask rather than working around it.
 
@@ -39,7 +39,7 @@ The three path substitutions also remove the `{{.home}}` placeholders the shippe
 ## Commands
 
 ```bash
-go build -o quadctl main.go   # or ./build.sh — same thing
+go build -o quadctl .         # or ./build.sh — same thing
 go test -v ./...              # run all tests
 go test -v ./util/...         # test a single package
 go test -v -run TestVolumeQuadletOptionsToPodmanTableDriven ./util/   # single test
@@ -60,11 +60,12 @@ Running the built binary requires a `quadctl.ini` config (auto-created at `$HOME
 
 Four packages, each with a distinct responsibility:
 
-- **`main.go`** — entry point. `main()` is `os.Exit(run())`; `run()` builds the initial `util.Quadctl` state struct, then runs a fixed pipeline: parse flags → load config → parse the subcommand → load quadlet schemas → discover/parse quadlet files → dispatch to a `Handle*` function in `core` based on `quadctl.Subcommand` and `quadctl.IsSystemd`. **Nothing below `main` calls `os.Exit`** — every failure returns an error and `run()` is the only place that picks an exit code (`PLAN.md` 1.2). Keep it that way.
+- **`main.go`** — entry point. `main()` is `os.Exit(run())`; `run()` builds the initial `util.Quadctl` state struct, then runs a fixed pipeline: parse global flags → load config → resolve the subcommand and its flags → load quadlet schemas → discover/parse quadlet files → dispatch. **Nothing below `main` calls `os.Exit`** — every failure returns an error and `run()` is the only place that picks an exit code (`PLAN.md` 1.2). Keep it that way.
+- **`registry.go`** — the whole command line in one table (`PLAN.md` 2.2). Each row is a subcommand: its name and aliases, the flags it accepts (drawn from the flag catalogue at the top of the file, so a flag reads the same way everywhere), its help text, whether an empty search directory should prompt or widen to `quadlet.src.path`, and the `Run`/`RunSystemd` handlers in `core` it dispatches to. `RunSystemd == nil` means `-s` makes no difference to that subcommand. **Adding or changing a subcommand means editing this table and nothing else** — there is no second switch to keep in sync, and global flags are registered on every subcommand's `FlagSet`, so `-s` works on either side of the subcommand.
 - **`util`** — cross-cutting state and I/O:
   - `Quadctl` (in `util/parser.go`) is the mutable state struct threaded through the whole run: parsed flags, config values, and systemd command templates. `Quadlet` is a single parsed quadlet file (sections as `map[string]map[string][]string`, plus resolved `Deps`/`ParentPod`/`ServiceName`).
   - `parser.go` — discovers quadlet files under a directory, parses INI-style sections, extracts inter-quadlet dependencies (pod membership, `Requires=`/`After=`, volume/network refs) and topologically sorts them so `core` can process/start things in the right order. Also parses `.quadlets` (combined) and `.kube` (+ companion k8s YAML) files.
-  - `flags.go` — defines one `flag.FlagSet` per subcommand (pull/create/start/run/stop/remove/status/ps/stats/images/list/logs) and the corresponding `Print*Usage` help text. Adding a subcommand flag means editing both this file and `main.go`'s switch.
+  - `flags.go` — `ErrUsage` and `ResolveSearchDir`, which turns the optional path argument into the absolute search directory. The flag sets themselves live in `registry.go`.
   - `files.go` / `config` — config file loading (`GetConfig`/`InitConfig`), default config install, and filesystem helpers (copy/link/list) used when installing quadlets to systemd's generator directories.
   - `tui.go` — a small Bubble Tea list picker used when no quadlet directory is specified.
   - `runner.go` — `Runner`, the single seam between quadctl and the host. Everything that
