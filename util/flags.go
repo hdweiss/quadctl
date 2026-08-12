@@ -351,7 +351,7 @@ func getSearchDir(quadctl *Quadctl, path string) string {
 			if !info.IsDir() {
 				dir = filepath.Dir(path)
 			} else {
-				dir, _ = filepath.Abs(path)
+				dir = path
 			}
 		} else {
 			// Otherwise, look for specified directory path relative to the quadlets path
@@ -368,6 +368,15 @@ func getSearchDir(quadctl *Quadctl, path string) string {
 				os.Exit(1)
 			}
 		}
+		// Always absolutize. Downstream code derives the systemd install subdirectory from
+		// filepath.Base(SearchDir); a relative "." here would resolve to the generator root
+		// itself and take every unrelated quadlet installed there with it.
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving path %s: %v\n", dir, err)
+			os.Exit(1)
+		}
+		dir = abs
 	}
 
 	return dir

@@ -485,7 +485,22 @@ func pruneStaleSystemdFiles(quadctl *util.Quadctl, targetDir, searchDir string) 
 		return commands
 	}
 
-	dest := filepath.Join(targetDir, filepath.Base(searchDir))
+	// Refuse to prune unless the install destination is a real subdirectory of the generator
+	// root that belongs to this source directory. A degenerate base name (".", "..", "/", or
+	// empty) collapses dest onto targetDir itself, at which point every unrelated quadlet
+	// installed there looks stale and gets deleted.
+	base := filepath.Base(searchDir)
+	if base == "." || base == ".." || base == "" || base == string(filepath.Separator) {
+		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - cannot derive an install subdirectory from source path %q\n", searchDir)
+		return commands
+	}
+
+	dest := filepath.Join(targetDir, base)
+	if filepath.Clean(dest) == filepath.Clean(targetDir) {
+		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - install directory %s is the quadlet generator root\n", dest)
+		return commands
+	}
+
 	destEntries, err := os.ReadDir(dest)
 	if err != nil {
 		return commands
