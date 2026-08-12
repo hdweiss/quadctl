@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -61,8 +62,8 @@ func TestQuadletOwnsContainer(t *testing.T) {
 // column layout is covered too.
 func TestGetContainerPSFiltersExactly(t *testing.T) {
 	// The ps format is id|name|pod|status|ports|image|created; these rows are in no pod.
-	runner := &util.RecordingRunner{
-		Fallback: util.RunResult{Output: strings.Join([]string{
+	runner := &runner.RecordingRunner{
+		Fallback: runner.RunResult{Output: strings.Join([]string{
 			"abc123|systemd-web||Up 2 minutes|80/tcp|nginx|2026-08-12 09:00:00 +0000 UTC",
 			"def456|myweb||Up 2 minutes|80/tcp|nginx|2026-08-12 09:00:00 +0000 UTC",
 		}, "\n")},

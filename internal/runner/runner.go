@@ -1,4 +1,4 @@
-package util
+package runner
 
 import (
 	"os"
@@ -23,8 +23,8 @@ const (
 	Interactive
 )
 
-// RunOptions carries everything about an invocation other than its arguments.
-type RunOptions struct {
+// Options carries everything about an invocation other than its arguments.
+type Options struct {
 	Mode OutputMode
 	Env  []string // extra variables, appended to the inherited environment
 }
@@ -36,13 +36,13 @@ type RunOptions struct {
 type Runner interface {
 	// Run executes args, returning whatever output the mode captures. An empty args slice
 	// is a no-op.
-	Run(args []string, opts RunOptions) (string, error)
+	Run(args []string, opts Options) (string, error)
 }
 
 // ExecRunner is the real Runner: it shells out.
 type ExecRunner struct{}
 
-func (ExecRunner) Run(args []string, opts RunOptions) (string, error) {
+func (ExecRunner) Run(args []string, opts Options) (string, error) {
 	if len(args) == 0 {
 		return "", nil
 	}
@@ -69,10 +69,30 @@ func (ExecRunner) Run(args []string, opts RunOptions) (string, error) {
 	}
 }
 
+// The three helpers below are the non-Command shell-outs: side operations a caller needs
+// while it is still building its command list, rather than steps in that list.
+
+// RunStreaming runs args with its output going straight to the terminal as it happens.
+func RunStreaming(r Runner, args []string) error {
+	_, err := r.Run(args, Options{Mode: Stream})
+	return err
+}
+
+// RunSilent runs args and throws the output away; only success or failure matters.
+func RunSilent(r Runner, args []string) error {
+	_, err := r.Run(args, Options{Mode: CaptureStdout})
+	return err
+}
+
+// RunCaptured runs args and returns its stdout for parsing.
+func RunCaptured(r Runner, args []string) (string, error) {
+	return r.Run(args, Options{Mode: CaptureStdout})
+}
+
 // Invocation is one command a Runner was asked to run.
 type Invocation struct {
 	Args []string
-	Opts RunOptions
+	Opts Options
 }
 
 // RunResult is the canned answer a RecordingRunner gives for a command.
@@ -90,7 +110,7 @@ type RecordingRunner struct {
 	Invocations []Invocation
 }
 
-func (r *RecordingRunner) Run(args []string, opts RunOptions) (string, error) {
+func (r *RecordingRunner) Run(args []string, opts Options) (string, error) {
 	r.Invocations = append(r.Invocations, Invocation{
 		Args: append([]string(nil), args...),
 		Opts: opts,

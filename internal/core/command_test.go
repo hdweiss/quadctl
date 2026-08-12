@@ -7,19 +7,20 @@ import (
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
 // newTestQuadctl returns a run state wired to a RecordingRunner, so nothing in a test
 // reaches podman, systemctl or the host at all.
-func newTestQuadctl(sub string) (*util.State, *util.RecordingRunner) {
-	runner := &util.RecordingRunner{}
+func newTestQuadctl(sub string) (*util.State, *runner.RecordingRunner) {
+	rec := &runner.RecordingRunner{}
 	return &util.State{
 		Subcommand: sub,
-		Runner:     runner,
+		Runner:     rec,
 		IsRootful:  true,
 		Config:     config.DefaultConfig(),
-	}, runner
+	}, rec
 }
 
 func container(id, name string) *util.Quadlet {
@@ -35,7 +36,7 @@ func container(id, name string) *util.Quadlet {
 // TestHandleStopArgv is the point of the runner seam: a handler's exact argv, asserted
 // without podman installed.
 func TestHandleStopArgv(t *testing.T) {
-	quadctl, runner := newTestQuadctl("stop")
+	quadctl, rec := newTestQuadctl("stop")
 	quadlets := []*util.Quadlet{container("web", "web"), container("db", "db")}
 
 	cmds, err := HandleStop(quadctl, quadlets)
@@ -48,14 +49,14 @@ func TestHandleStopArgv(t *testing.T) {
 
 	// Stops run in reverse dependency order.
 	want := []string{"podman stop db", "podman stop web"}
-	got := runner.Commands()
+	got := rec.Commands()
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("commands:\ngot:  %q\nwant: %q", got, want)
 	}
 }
 
 func TestHandleRemoveArgv(t *testing.T) {
-	quadctl, runner := newTestQuadctl("remove")
+	quadctl, rec := newTestQuadctl("remove")
 	quadlets := []*util.Quadlet{container("web", "web")}
 
 	cmds, err := HandleRemove(quadctl, quadlets)
@@ -65,14 +66,14 @@ func TestHandleRemoveArgv(t *testing.T) {
 	RunCommands(quadctl, cmds)
 
 	want := []string{"podman container rm -f web"}
-	if got := runner.Commands(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got := rec.Commands(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("commands:\ngot:  %q\nwant: %q", got, want)
 	}
 }
 
 // TestRunCommandsPrintOnlyRunsNothing guards the promise -p makes.
 func TestRunCommandsPrintOnlyRunsNothing(t *testing.T) {
-	quadctl, runner := newTestQuadctl("stop")
+	quadctl, rec := newTestQuadctl("stop")
 	quadctl.IsPrintOnly = true
 
 	cmds, err := HandleStop(quadctl, []*util.Quadlet{container("web", "web")})
@@ -81,15 +82,15 @@ func TestRunCommandsPrintOnlyRunsNothing(t *testing.T) {
 	}
 	RunCommands(quadctl, cmds)
 
-	if len(runner.Invocations) != 0 {
-		t.Errorf("print mode ran %d command(s): %q", len(runner.Invocations), runner.Commands())
+	if len(rec.Invocations) != 0 {
+		t.Errorf("print mode ran %d command(s): %q", len(rec.Invocations), rec.Commands())
 	}
 }
 
 // TestRunCommandsExitCodes covers the Phase 0 exit-code policy: teardown subcommands run
 // every command and report the last failure, build-up subcommands stop at the first.
 func TestRunCommandsExitCodes(t *testing.T) {
-	failure := util.RunResult{Err: fakeExitError(t, 125)}
+	failure := runner.RunResult{Err: fakeExitError(t, 125)}
 
 	tests := []struct {
 		name     string
@@ -103,8 +104,8 @@ func TestRunCommandsExitCodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			quadctl, runner := newTestQuadctl(tt.sub)
-			runner.Responses = map[string]util.RunResult{"podman stop web": failure}
+			quadctl, rec := newTestQuadctl(tt.sub)
+			rec.Responses = map[string]runner.RunResult{"podman stop web": failure}
 
 			cmds := []Command{}
 			for _, argv := range [][]string{{"podman", "stop", "web"}, {"podman", "stop", "db"}} {
@@ -118,8 +119,8 @@ func TestRunCommandsExitCodes(t *testing.T) {
 			if code := RunCommands(quadctl, cmds); code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", code, tt.wantCode)
 			}
-			if len(runner.Invocations) != tt.wantRun {
-				t.Errorf("ran %d command(s), want %d: %q", len(runner.Invocations), tt.wantRun, runner.Commands())
+			if len(rec.Invocations) != tt.wantRun {
+				t.Errorf("ran %d command(s), want %d: %q", len(rec.Invocations), tt.wantRun, rec.Commands())
 			}
 		})
 	}
@@ -130,15 +131,15 @@ func TestRunCommandsExitCodes(t *testing.T) {
 func TestForegroundRunAttachesStdio(t *testing.T) {
 	tests := []struct {
 		argv []string
-		want util.OutputMode
+		want runner.OutputMode
 	}{
-		{[]string{"podman", "run", "--name", "web", "alpine"}, util.Interactive},
-		{[]string{"podman", "run", "--name", "web", "-d", "alpine"}, util.CaptureCombined},
-		{[]string{"podman", "run", "--name", "web", "--detach", "alpine"}, util.CaptureCombined},
+		{[]string{"podman", "run", "--name", "web", "alpine"}, runner.Interactive},
+		{[]string{"podman", "run", "--name", "web", "-d", "alpine"}, runner.CaptureCombined},
+		{[]string{"podman", "run", "--name", "web", "--detach", "alpine"}, runner.CaptureCombined},
 	}
 
 	for _, tt := range tests {
-		quadctl, runner := newTestQuadctl("run")
+		quadctl, rec := newTestQuadctl("run")
 		c := NewCommand("running")
 		c.Cmd = tt.argv
 		c.PreFn = func(*Command) {}
@@ -146,10 +147,10 @@ func TestForegroundRunAttachesStdio(t *testing.T) {
 
 		RunCommands(quadctl, []Command{c})
 
-		if len(runner.Invocations) != 1 {
-			t.Fatalf("%v: got %d invocations", tt.argv, len(runner.Invocations))
+		if len(rec.Invocations) != 1 {
+			t.Fatalf("%v: got %d invocations", tt.argv, len(rec.Invocations))
 		}
-		if got := runner.Invocations[0].Opts.Mode; got != tt.want {
+		if got := rec.Invocations[0].Opts.Mode; got != tt.want {
 			t.Errorf("%v: output mode = %v, want %v", tt.argv, got, tt.want)
 		}
 	}

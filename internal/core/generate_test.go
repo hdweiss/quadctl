@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -29,7 +30,7 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 // Regenerate with: go test ./internal/core/ -run TestGenerateCommandsGolden -update
 func TestGenerateCommandsGolden(t *testing.T) {
 	quadctl := &util.State{
-		Runner:         &util.RecordingRunner{},
+		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 		SearchDir:      "testdata/stack",
 	}
@@ -129,7 +130,7 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 	cfg.IsRemoveVolumes = false
 	cfg.IsRemoveNetworks = false
 	quadctl := &util.State{
-		Runner: &util.RecordingRunner{},
+		Runner: &runner.RecordingRunner{},
 		Config: cfg,
 	}
 	q := &util.Quadlet{
@@ -157,7 +158,7 @@ func TestGenerateStopCommandKubeNoPanic(t *testing.T) {
 // used to do createCmd[3:] on whatever generateCreateCommand handed back, including nothing.
 func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 	quadctl := &util.State{
-		Runner:         &util.RecordingRunner{},
+		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 	}
 	// A type generateCreateCommand doesn't handle, so it returns an empty slice.
@@ -176,7 +177,7 @@ func TestGenerateRunCommandWithoutCreate(t *testing.T) {
 // half-built command to stdout on every .kube start.
 func TestGenerateStartupCommandKubeIsClean(t *testing.T) {
 	quadctl := &util.State{
-		Runner:         &util.RecordingRunner{},
+		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 	}
 	q := &util.Quadlet{
@@ -205,7 +206,7 @@ func TestExecBecomesArgv(t *testing.T) {
 	}
 
 	quadctl := &util.State{
-		Runner:         &util.RecordingRunner{},
+		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 		SearchDir:      dir,
 	}
@@ -242,7 +243,7 @@ func TestPodmanArgsSplitOnce(t *testing.T) {
 	}
 
 	quadctl := &util.State{
-		Runner:         &util.RecordingRunner{},
+		Runner:         &runner.RecordingRunner{},
 		QuadletSchemas: util.GetQuadletSchemas(),
 		SearchDir:      dir,
 	}

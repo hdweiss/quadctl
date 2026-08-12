@@ -8,6 +8,7 @@ import (
 
 	"github.com/fkmiec/quadctl/internal/util"
 
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
@@ -112,7 +113,7 @@ func HandleSystemdStatus(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 			c.Cmd = args
 			commands = append(commands, c)
 		} else {
-			runCommand(quadctl.Runner, args)
+			runner.RunStreaming(quadctl.Runner, args)
 		}
 		return commands, nil
 	} else {
@@ -165,7 +166,7 @@ func HandleSystemdLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command
 		c.Cmd = cmd
 		commands = append(commands, c)
 	} else {
-		runCommand(quadctl.Runner, cmd)
+		runner.RunStreaming(quadctl.Runner, cmd)
 	}
 	return commands, nil
 }

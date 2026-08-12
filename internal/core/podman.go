@@ -4,10 +4,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
-func resourceExists(runner util.Runner, qType string, name string) bool {
+func resourceExists(r runner.Runner, qType string, name string) bool {
 	inspectCmd := []string{"podman"}
 	switch qType {
 	case ".container":
@@ -21,12 +22,12 @@ func resourceExists(runner util.Runner, qType string, name string) bool {
 	default:
 		return false
 	}
-	return runCommandSilently(runner, inspectCmd) == nil
+	return runner.RunSilent(r, inspectCmd) == nil
 }
 
 func listSystemdInstalledQuadlets(quadctl *util.State, quadlets []*util.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}},{{.Path}},{{.UnitName}},{{.Status}}"}
-	output, err := runCommandCapture(quadctl.Runner, cmd)
+	output, err := runner.RunCaptured(quadctl.Runner, cmd)
 	if err != nil {
 		// Older podman releases don't have the `quadlet list` subcommand. Fall back to
 		// querying each unit's state via systemctl instead of failing outright.
@@ -71,7 +72,7 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.State, quadlets []*util.Qua
 			loadArgs = append(loadArgs, "--user")
 		}
 		loadArgs = append(loadArgs, "show", q.ServiceName, "--property=LoadState", "--value")
-		loadState, _ := runCommandCapture(quadctl.Runner, loadArgs)
+		loadState, _ := runner.RunCaptured(quadctl.Runner, loadArgs)
 		loadState = strings.TrimSpace(loadState)
 		if loadState == "" || loadState == "not-found" {
 			continue
@@ -82,7 +83,7 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.State, quadlets []*util.Qua
 			activeArgs = append(activeArgs, "--user")
 		}
 		activeArgs = append(activeArgs, "is-active", q.ServiceName)
-		output, _ := runCommandCapture(quadctl.Runner, activeArgs)
+		output, _ := runner.RunCaptured(quadctl.Runner, activeArgs)
 		status := strings.TrimSpace(output)
 		if status == "" {
 			status = "unknown"
@@ -92,9 +93,9 @@ func listInstalledQuadletsViaSystemctl(quadctl *util.State, quadlets []*util.Qua
 	return info, nil
 }
 
-func getContainerPS(runner util.Runner, quadlets []*util.Quadlet) ([][]string, error) {
+func getContainerPS(r runner.Runner, quadlets []*util.Quadlet) ([][]string, error) {
 	cmd := []string{"podman", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.PodName}}|{{.Status}}|{{.Ports}}|{{.Image}}|{{.Created}}"}
-	output, err := runCommandCapture(runner, cmd)
+	output, err := runner.RunCaptured(r, cmd)
 	if err != nil {
 		return nil, err
 	}

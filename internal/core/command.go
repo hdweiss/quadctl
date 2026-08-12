@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -26,7 +27,7 @@ type Command struct {
 	Warnings []string
 	// Runner executes Cmd. RunCommands fills it in from the run state before running, so
 	// handlers that build a Command don't have to carry one around.
-	Runner util.Runner
+	Runner runner.Runner
 	// ShowSpinner is set by RunCommands from the run state: a spinner redraws its own line,
 	// which only means anything on a terminal.
 	ShowSpinner bool
@@ -83,9 +84,9 @@ func DefaultRunFn(c *Command) {
 		// here - a quote that survived this far is one the user meant literally.
 		if isForegroundRun(c.Cmd) {
 			fmt.Printf("Running in foreground: %s\n", strings.Join(c.Cmd, " "))
-			_, c.Error = c.Runner.Run(c.Cmd, util.RunOptions{Mode: util.Interactive})
+			_, c.Error = c.Runner.Run(c.Cmd, runner.Options{Mode: runner.Interactive})
 		} else {
-			output, err := c.Runner.Run(c.Cmd, util.RunOptions{Mode: util.CaptureCombined})
+			output, err := c.Runner.Run(c.Cmd, runner.Options{Mode: runner.CaptureCombined})
 			c.Output = []string{output}
 			c.Error = err
 		}
@@ -332,10 +333,10 @@ func diagnoseFailedSystemctlCommand(quadctl *util.State, cmd []string) string {
 	}
 
 	var b strings.Builder
-	if out, _ := quadctl.Runner.Run(statusArgs, util.RunOptions{Mode: util.CaptureCombined}); len(out) > 0 {
+	if out, _ := quadctl.Runner.Run(statusArgs, runner.Options{Mode: runner.CaptureCombined}); len(out) > 0 {
 		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", strings.Join(statusArgs, " "), strings.TrimRight(out, "\n"))
 	}
-	if out, _ := quadctl.Runner.Run(journalArgs, util.RunOptions{Mode: util.CaptureCombined}); len(out) > 0 {
+	if out, _ := quadctl.Runner.Run(journalArgs, runner.Options{Mode: runner.CaptureCombined}); len(out) > 0 {
 		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", strings.Join(journalArgs, " "), strings.TrimRight(out, "\n"))
 	}
 	return b.String()
@@ -344,10 +345,10 @@ func diagnoseFailedSystemctlCommand(quadctl *util.State, cmd []string) string {
 // currentInvocationID returns the unit's current InvocationID (the ID systemd/journald tag every
 // log line from a single start-to-stop run with), or "" if the unit has none on record - e.g. it
 // was never found/loaded, or genuinely never ran.
-func currentInvocationID(runner util.Runner, userArgs []string, unit string) string {
+func currentInvocationID(r runner.Runner, userArgs []string, unit string) string {
 	args := append([]string{"systemctl"}, userArgs...)
 	args = append(args, "show", unit, "--property=InvocationID", "--value")
-	out, err := runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
+	out, err := r.Run(args, runner.Options{Mode: runner.CaptureStdout})
 	if err != nil {
 		return ""
 	}
@@ -356,26 +357,6 @@ func currentInvocationID(runner util.Runner, userArgs []string, unit string) str
 		return ""
 	}
 	return id
-}
-
-// The three helpers below are the non-Command shell-outs: side operations a handler needs
-// while it is still building its command list, rather than steps in that list.
-
-// runCommand runs args with its output going straight to the terminal as it happens.
-func runCommand(runner util.Runner, args []string) error {
-	_, err := runner.Run(args, util.RunOptions{Mode: util.Stream})
-	return err
-}
-
-// runCommandSilently runs args and throws the output away; only success or failure matters.
-func runCommandSilently(runner util.Runner, args []string) error {
-	_, err := runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
-	return err
-}
-
-// runCommandCapture runs args and returns its stdout for parsing.
-func runCommandCapture(runner util.Runner, args []string) (string, error) {
-	return runner.Run(args, util.RunOptions{Mode: util.CaptureStdout})
 }
 
 // ShellQuote renders argv as a line that can be pasted into a shell and run. Arguments are

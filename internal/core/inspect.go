@@ -8,6 +8,7 @@ import (
 
 	"github.com/fkmiec/quadctl/internal/util"
 
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
@@ -74,18 +75,18 @@ func HandleStats(quadctl *util.State, quadlets []*util.Quadlet) error {
 		cmd = append(cmd, id)
 	}
 
-	return runCommand(quadctl.Runner, cmd)
+	return runner.RunStreaming(quadctl.Runner, cmd)
 }
 
 func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
-	runner := quadctl.Runner
+	r := quadctl.Runner
 
 	//REPOSITORY                                 TAG         IMAGE ID      CREATED       SIZE
 	cmd := []string{"podman", "images", "--noheading", "--filter", "reference=ADD_ID_HERE", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Created}}|{{.Size}}"}
 	imageInfo := [][]string{}
 
 	// Fetch image info for each container
-	psInfo, err := getContainerPS(runner, quadlets)
+	psInfo, err := getContainerPS(r, quadlets)
 	if err != nil {
 		return err
 	}
@@ -101,7 +102,7 @@ func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
 				continue
 			}
 			cmd[4] = "reference=" + name
-			output, err := runCommandCapture(runner, cmd)
+			output, err := runner.RunCaptured(r, cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error fetching image info for container %s: %v\n", info[0], err)
 				continue
@@ -129,7 +130,7 @@ func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
 					continue
 				}
 				cmd[4] = "reference=" + name
-				output, err := runCommandCapture(runner, cmd)
+				output, err := runner.RunCaptured(r, cmd)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error fetching image info for quadlet %s: %v\n", q.ID, err)
 					continue
@@ -153,7 +154,7 @@ func HandleImages(quadctl *util.State, quadlets []*util.Quadlet) error {
 							continue
 						}
 						cmd[4] = "reference=" + name
-						output, err := runCommandCapture(runner, cmd)
+						output, err := runner.RunCaptured(r, cmd)
 						if err != nil {
 							resName, _ := res["name"].(string)
 							fmt.Fprintf(os.Stderr, "Error fetching image info for .kube %s container %s: %v\n", q.ID, resName, err)
@@ -237,7 +238,7 @@ func HandleLogs(quadctl *util.State, quadlets []*util.Quadlet) ([]Command, error
 		c.Cmd = cmd
 		commands = append(commands, c)
 	} else {
-		runCommand(quadctl.Runner, cmd)
+		runner.RunStreaming(quadctl.Runner, cmd)
 	}
 	return commands, nil
 }

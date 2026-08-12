@@ -8,12 +8,13 @@ import (
 	"text/template"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
 func pruneTestQuadctl() *util.State {
 	q := &util.State{
-		Runner:     &util.RecordingRunner{},
+		Runner:     &runner.RecordingRunner{},
 		Subcommand: "create",
 		IsRootful:  true,
 		Config:     config.DefaultConfig(),

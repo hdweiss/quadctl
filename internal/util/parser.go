@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/schema"
 	yaml "github.com/goccy/go-yaml"
 )
@@ -36,7 +37,7 @@ type State struct {
 	Config *config.Config
 
 	QuadletSchemas map[string]map[string]schema.SchemaOption
-	Runner         Runner // Executes every external command; swapped for a fake in tests
+	Runner         runner.Runner // Executes every external command; swapped for a fake in tests
 
 	IsRootful bool // Derived from the effective uid, not a flag
 	IsSystemd bool

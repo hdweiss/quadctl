@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/fkmiec/quadctl/internal/config"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/util"
 )
 
@@ -399,8 +400,8 @@ func validateQuadletGenerationCommand(quadctl *util.State, quadlets []*util.Quad
 		}
 		args = append(args, outDir, outDir, outDir)
 
-		output, err := quadctl.Runner.Run(args, util.RunOptions{
-			Mode: util.CaptureCombined,
+		output, err := quadctl.Runner.Run(args, runner.Options{
+			Mode: runner.CaptureCombined,
 			Env:  []string{"QUADLET_UNIT_DIRS=" + targetDir},
 		})
 		if err == nil {
@@ -532,13 +533,13 @@ func HandleSystemdRemove(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 			if q.Type == ".volume" && quadctl.Config.IsRemoveVolumes {
 				c.Output = append(c.Output, fmt.Sprintf("Removing volume %s", name))
 				funcs = append(funcs, func() {
-					_ = runCommandSilently(quadctl.Runner, []string{"podman", "volume", "rm", "-f", name})
+					_ = runner.RunSilent(quadctl.Runner, []string{"podman", "volume", "rm", "-f", name})
 				})
 			}
 			if q.Type == ".network" && quadctl.Config.IsRemoveNetworks {
 				c.Output = append(c.Output, fmt.Sprintf("Removing network %s", name))
 				funcs = append(funcs, func() {
-					_ = runCommandSilently(quadctl.Runner, []string{"podman", "network", "rm", "-f", name})
+					_ = runner.RunSilent(quadctl.Runner, []string{"podman", "network", "rm", "-f", name})
 				})
 			}
 		}

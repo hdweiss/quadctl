@@ -11,6 +11,7 @@ import (
 
 	"github.com/fkmiec/quadctl/internal/config"
 	"github.com/fkmiec/quadctl/internal/core"
+	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/schema"
 	"github.com/fkmiec/quadctl/internal/util"
 )
@@ -198,7 +199,7 @@ func initState() {
 	quadctl = &util.State{
 		Config:         config.DefaultConfig(),
 		QuadletSchemas: map[string]map[string]schema.SchemaOption{},
-		Runner:         util.ExecRunner{},
+		Runner:         runner.ExecRunner{},
 		ListDepth:      defaultListDepth,
 		// Rootful is a property of how quadctl was invoked, not a flag: it decides which
 		// generator directory is used and whether systemctl gets --user.
