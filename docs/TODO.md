@@ -146,10 +146,12 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   **Still open:** extraction copies *every* sibling file (including `.env` files with
   secrets) into the scratch directory.
 
-- [ ] **`list` creates directories, with a broken mode** (`core/handlers.go:1262`).
-  A read-only listing command shouldn't `MkdirAll` at all, and `0660` has no execute bit,
-  so the directory it just created can't be traversed. `quadctl ls -a` as a normal user
-  also tries to create `/etc/containers/systemd`.
+- [x] **`list` creates directories, with a broken mode** (`core/handlers.go:1262`).
+  A read-only listing command shouldn't `MkdirAll` at all, and `0660` had no execute bit,
+  so the directory it just created couldn't be traversed. `quadctl ls -a` as a normal user
+  also tried to create `/etc/containers/systemd`.
+  *Fixed by `PLAN.md` Phase 4:* `listQuadlets` reports a missing directory instead of
+  creating one.
 
 - [ ] **`list` ignores its `[path]` argument but still validates it.** **[verified]**
   `HandleList` only ever uses the configured paths (`core/handlers.go:1225-1255`), yet
@@ -157,9 +159,9 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   prints the *root* systemd tree; `quadctl ls doesnotexist` errors. Either honor the arg
   or reject it explicitly.
 
-- [ ] **`list` shows dotfiles.** **[verified]** — `.git` appears in the tree
-  (`core/handlers.go:1299`) even though the directory selector deliberately skips
-  dot-prefixed entries (`util/files.go:244`).
+- [x] **`list` shows dotfiles.** **[verified]** — `.git` appeared in the tree even though
+  the directory selector deliberately skips dot-prefixed entries.
+  *Fixed by `PLAN.md` Phase 4:* the tree skips them too.
 
 - [ ] **"Is it already running?" checks are wrong on both paths.**
   Non-systemd `HandleStart` inspects only the *first* ps row (`core/handlers.go:120-121`) —
@@ -237,17 +239,22 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `perm&0200 != 0200 && perm&0020 != 0020 && perm&0002 != 0002` ignores ownership entirely.
   Just attempt the write (or use `unix.Access`) and report the real error.
 
-- [ ] **`CopyDir` skips nested subdirectories** (`util/files.go:224`), so any non-drop-in
+- [x] **`CopyDir` skips nested subdirectories** (`util/files.go:224`), so any non-drop-in
   subdirectory in a quadlet app dir (a `config/` folder that gets bind-mounted, for
-  instance) is not installed under systemd — silently.
+  instance) was not installed under systemd — silently.
+  *Fixed by `PLAN.md` Phase 4:* `CopyDir` recurses. The separate drop-in copy is now only
+  needed when files are installed individually rather than as a directory.
 
-- [ ] **File/dir modes are hardcoded** (`util/files.go:164` `0770`, `:194` `0644`): source
-  modes aren't preserved, and secret-bearing files (`.env`) become world-readable in the
-  generator directory.
+- [x] **File/dir modes are hardcoded** (`util/files.go:164` `0770`, `:194` `0644`): source
+  modes weren't preserved, and secret-bearing files (`.env`) became world-readable in the
+  generator directory. *Fixed by `PLAN.md` Phase 4:* `CopyFile` and `CopyDir` carry the
+  source mode across, including when overwriting an existing installed copy.
 
-- [ ] **`GetConfig` creates `quadlet.user.path` and `quadlet.src.path` but never
-  `quadlet.root.path`** (`util/files.go:129-136`), and under `sudo` it creates the *user*
+- [x] **`GetConfig` creates `quadlet.user.path` and `quadlet.src.path` but never
+  `quadlet.root.path`** (`util/files.go:129-136`), and under `sudo` it created the *user*
   path as root, leaving root-owned directories in the user's home.
+  *Fixed by `PLAN.md` Phase 4:* `LoadConfig` creates `quadlet.src.path` plus whichever
+  generator directory this invocation could use — root's when rootful, the user's when not.
 
 ## 3. CLI / flag handling
 

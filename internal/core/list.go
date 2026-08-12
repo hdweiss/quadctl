@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fkmiec/quadctl/internal/util"
 
@@ -33,14 +34,15 @@ func HandleList(quadctl *util.State) error {
 }
 
 func listQuadlets(absPath string, depth int) error {
-	// Verify the path exists and is a directory
+	// A listing reports on what is there; it does not make anything. The old code created the
+	// directory it was about to list - as 0660, with no execute bit, so nothing could be
+	// traversed afterwards - which also meant 'quadctl ls -a' as a normal user tried to
+	// create /etc/containers/systemd (TODO.md section 2).
 	info, err := os.Stat(absPath)
 	if err != nil {
-		//try to create the directory
-		if err = os.MkdirAll(absPath, 0660); err != nil {
-			return fmt.Errorf("%s does not exist and could not be created: %w", absPath, err)
-		}
-	} else if !info.IsDir() {
+		return fmt.Errorf("cannot list %s: %w", absPath, err)
+	}
+	if !info.IsDir() {
 		return fmt.Errorf("configured quadlet path is not a directory: %s", absPath)
 	}
 
@@ -71,6 +73,11 @@ func appendDirItems(lw list.Writer, currentPath string, level int, depth int) er
 	}
 
 	for _, entry := range entries {
+		// Skip dot-prefixed entries, as the directory selector already does: .git in a
+		// quadlet directory is not a quadlet (TODO.md section 2).
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
 		// Add the current file or directory to the list
 		lw.AppendItem(entry.Name())
 

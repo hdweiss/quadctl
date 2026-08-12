@@ -124,13 +124,14 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 		}
 		// Otherwise copy files to the target directory using podman quadlet install
 	} else {
-		var destDropIn string
 		// If the user configured to use a subdirectory to organize quadlets, we create the directory and move files after podman quadlet install step.
 		if quadctl.Config.UseSubdirectories {
 			//Create the subdirectory at target location
 			dest := filepath.Join(targetDir, installName)
 			c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", installName, dest))
 			f := func() error {
+				// CopyDir recurses, so drop-in directories and anything else the quadlet
+				// directory keeps alongside its files come along with it.
 				if err := util.CopyDir(searchDir, dest); err != nil {
 					return fmt.Errorf("copying %s to %s: %w", searchDir, dest, err)
 				}
@@ -138,6 +139,8 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 			}
 			funcs = append(funcs, f)
 		} else {
+			// Installing individual files into a shared directory: each quadlet's drop-in
+			// directory has to be named and copied on its own.
 			for _, q := range quadlets {
 				c.Output = append(c.Output, fmt.Sprintf("Copying file %s to %s", filepath.Base(q.Filepath), filepath.Join(targetDir, filepath.Base(q.Filepath))))
 				f := func() error {
@@ -147,21 +150,14 @@ func HandleSystemdCreate(quadctl *util.State, quadlets []*util.Quadlet) ([]Comma
 					return nil
 				}
 				funcs = append(funcs, f)
-			}
-		}
-		// Copy drop-in directories if exist
-		for _, q := range quadlets {
-			dropInDir := q.Filepath + ".d"
-			if info, err := os.Stat(dropInDir); err == nil && info.IsDir() {
 
-				// Set dropInDir
-				if quadctl.Config.UseSubdirectories {
-					destDropIn = filepath.Join(targetDir, installName, filepath.Base(q.Filepath)+".d")
-				} else {
-					destDropIn = filepath.Join(targetDir, filepath.Base(q.Filepath)+".d")
+				dropInDir := q.Filepath + ".d"
+				if info, err := os.Stat(dropInDir); err != nil || !info.IsDir() {
+					continue
 				}
+				destDropIn := filepath.Join(targetDir, filepath.Base(q.Filepath)+".d")
 				c.Output = append(c.Output, fmt.Sprintf("Copying directory %s to %s", filepath.Base(dropInDir), destDropIn))
-				f := func() error {
+				f = func() error {
 					if err := util.CopyDir(dropInDir, destDropIn); err != nil {
 						return fmt.Errorf("copying drop-in directory %s to %s: %w", dropInDir, destDropIn, err)
 					}

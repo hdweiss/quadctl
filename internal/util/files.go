@@ -35,10 +35,15 @@ func installDefaultConfig(path string) error {
 	return fmt.Errorf("unable to create default config.ini at %s: %w", path, err)
 }
 
+// dirMode is the mode quadctl creates directories with. A directory needs its execute bit to
+// be traversable at all, which is what made the 0660 in the old listing code produce a
+// directory nothing could look inside.
+const dirMode = 0755
+
 func createDirIfNotExists(path string) error {
 	_, err := os.Stat(path)
 	if err != nil {
-		if err = os.MkdirAll(path, 0770); err != nil {
+		if err = os.MkdirAll(path, dirMode); err != nil {
 			return err
 		}
 	}
@@ -58,21 +63,31 @@ func WriteFile(path string, text string) error {
 	return err
 }
 
+// CopyFile copies src to dst, giving dst the source file's permissions. The mode used to be
+// hardcoded 0644, which both discarded a deliberately restrictive one - an .env file sitting
+// next to the quadlets became world-readable in the generator directory - and silently
+// dropped the execute bit from anything meant to be run.
 func CopyFile(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
 	s, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	d, err := os.Create(dst)
+
+	d, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
 	if err != nil {
 		return err
 	}
-	if err := os.Chmod(dst, 0644); err != nil {
-		d.Close()
+	defer d.Close()
+	// O_CREATE only applies the mode to a file that did not exist, so set it explicitly:
+	// overwriting an installed copy has to update its permissions too.
+	if err := d.Chmod(info.Mode().Perm()); err != nil {
 		return err
 	}
-	defer d.Close()
 	_, err = io.Copy(d, s)
 	return err
 }
@@ -85,23 +100,35 @@ func DeleteFile(path string) error {
 	return nil
 }
 
+// CopyDir copies src to dst recursively, preserving directory and file permissions. It used
+// to skip subdirectories, so anything a quadlet directory kept alongside its files - a
+// drop-in directory, a config/ folder that gets bind-mounted - was silently left behind when
+// the directory was installed under systemd.
 func CopyDir(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dst, info.Mode()); err != nil {
+	if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
 		return err
 	}
-	files, err := os.ReadDir(src)
+	// MkdirAll applies the umask, and does nothing at all when the directory already exists.
+	if err := os.Chmod(dst, info.Mode().Perm()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
 	if err != nil {
 		return err
 	}
-	for _, f := range files {
-		if f.IsDir() {
-			continue // Don't handle recursive dirs for drop-ins
+	for _, e := range entries {
+		srcPath, dstPath := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := CopyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
 		}
-		if err := CopyFile(filepath.Join(src, f.Name()), filepath.Join(dst, f.Name())); err != nil {
+		if err := CopyFile(srcPath, dstPath); err != nil {
 			return err
 		}
 	}

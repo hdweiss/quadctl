@@ -175,6 +175,22 @@ func LoadConfig(isRootful bool) (*Config, error) {
 		}
 	}
 
+	// Create the directories this invocation could actually write to. Only one of the two
+	// generator directories applies: creating the user path while running under sudo left
+	// root-owned directories in the user's home, and the root path was never created at all
+	// (TODO.md section 2).
+	paths := map[string]string{"quadlet.src.path": cfg.QuadletSrcPath}
+	if isRootful {
+		paths["quadlet.root.path"] = cfg.QuadletRootPath
+	} else {
+		paths["quadlet.user.path"] = cfg.QuadletUserPath
+	}
+	for _, key := range slices.Sorted(maps.Keys(paths)) {
+		if err := createDirIfNotExists(paths[key]); err != nil {
+			return nil, fmt.Errorf("configured %s (%s) not found and could not be created: %w", key, paths[key], err)
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -240,13 +256,7 @@ func readConfigFile(isRootful bool) (map[string]string, error) {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
-	// Check if user quadlet locations all exist and create if not.
-	if err := createDirIfNotExists(config["quadlet.src.path"]); err != nil {
-		return nil, fmt.Errorf("configured quadlet.src.path not found and could not be created: %w", err)
-	}
-	if err := createDirIfNotExists(config["quadlet.user.path"]); err != nil {
-		return nil, fmt.Errorf("configured quadlet.user.path not found and could not be created: %w", err)
-	}
-
+	// The quadlet directories are created by LoadConfig, once the defaults have filled in
+	// whatever the file left out.
 	return config, nil
 }
