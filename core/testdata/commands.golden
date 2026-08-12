@@ -1,0 +1,20 @@
+## data.volume
+create podman volume create --driver=local --label tier=storage data
+start  -
+stop   -
+
+## front.network
+create podman network create --driver bridge --gateway 10.9.0.1 --subnet 10.9.0.0/24 front
+start  -
+stop   -
+
+## stack.pod
+create podman pod create --name stack-pod --publish 9090:90
+start  podman pod start stack-pod
+stop   podman pod stop stack-pod
+
+## app.container
+create podman container create --name web-app --restart always --cap-add NET_ADMIN --name web-app --env FOO=bar --hostname apphost --label owner=platform --network front --pod stack-pod --publish 8080:80 --read-only --user 1000 -v data:/var/lib/data docker.io/library/nginx:latest
+start  -
+stop   -
+

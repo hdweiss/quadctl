@@ -1,0 +1,16 @@
+[Container]
+Image=docker.io/library/nginx:latest
+ContainerName=web-app
+PublishPort=8080:80
+Environment=FOO=bar
+Label=owner=platform
+User=1000
+HostName=apphost
+ReadOnly=true
+AddCapability=NET_ADMIN
+Network=front.network
+Volume=data.volume:/var/lib/data
+Pod=stack.pod
+
+[Service]
+Restart=always

@@ -1,0 +1,4 @@
+[Volume]
+VolumeName=data
+Driver=local
+Label=tier=storage

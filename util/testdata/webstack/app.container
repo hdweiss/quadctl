@@ -1,0 +1,17 @@
+# A container exercising the parse paths the tests care about.
+[Unit]
+Description=Web app
+After=db.container
+
+[Container]
+Image=docker.io/library/nginx:latest
+ContainerName=web-app
+Pod=stack.pod
+Environment=GREETING="hello world"
+PublishPort=8080:80
+Volume=data.volume:/var/lib/data
+Network=front.network
+AutoUpdate=registry
+
+[Service]
+Restart=always

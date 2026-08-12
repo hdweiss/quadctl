@@ -1,8 +1,11 @@
-*.container
-*.pod
-*.network
-*.volume
-localquad
-quadctl
-validator
+# Quadlet files kept at the repo root while working are personal, not part of the project.
+# Anchored to the root so test fixtures under testdata/ can be committed.
+/*.container
+/*.pod
+/*.network
+/*.volume
+/*.kube
+/localquad
+/quadctl
+/validator
 .zed

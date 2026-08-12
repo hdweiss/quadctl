@@ -1,0 +1,5 @@
+[Network]
+NetworkName=front
+Driver=bridge
+Subnet=10.9.0.0/24
+Gateway=10.9.0.1

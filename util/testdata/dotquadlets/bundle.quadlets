@@ -1,0 +1,8 @@
+# FileName=cache.container
+[Container]
+Image=docker.io/library/redis:7
+ContainerName=cache
+---
+# FileName=cachedata.volume
+[Volume]
+VolumeName=cachedata
