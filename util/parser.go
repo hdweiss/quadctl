@@ -3,7 +3,6 @@ package util
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"html/template"
 	"os"
@@ -39,6 +38,7 @@ type Quadctl struct {
 	IsLongStatus      bool
 	Subcommand        string
 	SearchDir         string
+	PathArg           string // Positional path argument given to the subcommand, if any
 	PodmanArgs        string
 	RunCmd            string
 	DotQuadletsPath   string
@@ -88,26 +88,33 @@ func InitQuadlets(quadctl *Quadctl) []*Quadlet {
 	// If user specified the -f flag, the path provided should be a quadlet file, rather than directory. Only process the specified file and its dependencies.
 	var selectedQuadlets []*Quadlet
 	if quadctl.IsFile {
+		if quadctl.PathArg == "" {
+			fmt.Fprintf(os.Stderr, "Error: -f/--file requires the path of a quadlet file\n")
+			os.Exit(1)
+		}
 		// If a file was specified, find the corresponding quadlet
-		tmp := strings.TrimSuffix(flag.Arg(1), filepath.Ext(flag.Arg(1)))
+		name := filepath.Base(quadctl.PathArg)
+		tmp := strings.TrimSuffix(name, filepath.Ext(name))
 		selected := quadlets[tmp]
-		if selected != nil {
-			selectedQuadlets = append(selectedQuadlets, selected)
-			if len(selected.Deps) > 0 {
-				// Add dependencies to the selected quadlets
-				for _, dep := range selected.Deps {
-					if depQuadlet := quadlets[dep]; depQuadlet != nil {
-						selectedQuadlets = append(selectedQuadlets, depQuadlet)
-					}
+		if selected == nil {
+			fmt.Fprintf(os.Stderr, "Error: quadlet %s not found in %s\n", name, quadctl.SearchDir)
+			os.Exit(1)
+		}
+		selectedQuadlets = append(selectedQuadlets, selected)
+		if len(selected.Deps) > 0 {
+			// Add dependencies to the selected quadlets
+			for _, dep := range selected.Deps {
+				if depQuadlet := quadlets[dep]; depQuadlet != nil {
+					selectedQuadlets = append(selectedQuadlets, depQuadlet)
 				}
 			}
-			// Replace the original quadlets with the selected ones
-			selectedQuadletsMap := make(map[string]*Quadlet)
-			for _, q := range selectedQuadlets {
-				selectedQuadletsMap[q.ID] = q
-			}
-			quadlets = selectedQuadletsMap
 		}
+		// Replace the original quadlets with the selected ones
+		selectedQuadletsMap := make(map[string]*Quadlet)
+		for _, q := range selectedQuadlets {
+			selectedQuadletsMap[q.ID] = q
+		}
+		quadlets = selectedQuadletsMap
 	}
 
 	//quadlets := util.InitQuadlets()
@@ -134,7 +141,14 @@ func InitAllQuadlets(quadctl *Quadctl) []*Quadlet {
 	}
 
 	origSearchDir := quadctl.SearchDir
-	defer func() { quadctl.SearchDir = origSearchDir }()
+	// A single-file filter is meaningless once the scope is widened to every quadlet
+	// directory, and would abort on the first directory that doesn't contain the file.
+	origIsFile := quadctl.IsFile
+	quadctl.IsFile = false
+	defer func() {
+		quadctl.SearchDir = origSearchDir
+		quadctl.IsFile = origIsFile
+	}()
 
 	var all []*Quadlet
 	for _, d := range dirs {

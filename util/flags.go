@@ -326,7 +326,10 @@ func ProcessSubcommand(quadctl *Quadctl) {
 	quadctl.Subcommand = strings.ToLower(flag.Arg(0))
 	if flagSet, ok := flagSets[quadctl.Subcommand]; ok {
 		flagSet.Parse(flag.Args()[1:])
-		quadctl.SearchDir = getSearchDir(quadctl, flagSets[quadctl.Subcommand].Arg(0))
+		// The path argument belongs to the subcommand's own FlagSet, not the global one -
+		// flag.Arg(1) would be whatever flag happened to follow the subcommand.
+		quadctl.PathArg = flagSet.Arg(0)
+		quadctl.SearchDir = getSearchDir(quadctl, quadctl.PathArg)
 	} else {
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", quadctl.Subcommand)
 		os.Exit(1)
