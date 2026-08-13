@@ -155,18 +155,6 @@ func optEnvironmentBuild() SchemaOption {
 	}
 }
 
-func optLabelBuild() SchemaOption {
-	return SchemaOption{
-		QuadletKey:      "Label",
-		PodmanKey:       "--label",
-		Description:     "Add OCI labels to the built image. Format: key=value. Can be specified multiple times.",
-		QuadletTemplate: "{{.Key}}={{.Value}}",
-		PodmanTemplate:  "{{.Key}} {{.Value}}",
-		AllowMultiple:   true,
-		Values:          []OptionValue{},
-	}
-}
-
 func optDNSBuild() SchemaOption {
 	return SchemaOption{
 		QuadletKey:      "DNS",
@@ -422,18 +410,5 @@ func optContainersConfModuleBuild() SchemaOption {
 		PodmanTemplate:  "{{.Key}} {{.Value}}",
 		AllowMultiple:   true,
 		Values:          []OptionValue{},
-	}
-}
-
-// optBuildSchema generates the complete build schema
-func GetBuildSchema() Schema {
-	options := GetBuildOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Build",
-			Options: options,
-		},
 	}
 }

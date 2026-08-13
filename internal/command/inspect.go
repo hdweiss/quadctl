@@ -13,16 +13,25 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
+func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
+	// In print mode, say what would be run rather than running it and printing a table: -p
+	// used to be accepted by 'status' and change nothing at all (TODO.md section 3). The
+	// filtering down to these quadlets' containers happens in quadctl, so the command shown is
+	// the query, not the whole answer.
+	if quadctl.IsPrintOnly {
+		c := NewCommand("Listing containers for these quadlets")
+		c.Cmd = podman.PSArgs()
+		return []Command{c}, nil
+	}
 
 	psInfo, err := podman.ContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(psInfo) == 0 {
 		fmt.Fprintf(os.Stderr, "No containers found for the quadlets in %s.\n", quadctl.SearchDir)
-		return nil
+		return nil, nil
 	}
 
 	t := table.NewWriter()
@@ -31,7 +40,6 @@ func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 	format := "2006-01-02 15:04:05.999999999 -0700 MST"
 	for _, info := range psInfo {
 		if len(info) >= 7 {
-
 			createdDatetime, err := time.Parse(format, strings.TrimSpace(info[6]))
 			createdDuration := "unknown"
 			if err == nil {
@@ -51,32 +59,31 @@ func HandlePS(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 	t.SetStyle(TableStyle(quadctl))
 	t.Render()
 
-	return nil
+	return nil, nil
 }
 
-func HandleStats(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
-
+func HandleStats(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
 	psInfo, err := podman.ContainerPS(quadctl.Runner, quadlets)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Nothing matching is not a failure - ps says so and exits 0 for exactly the same
 	// situation, and the two used to disagree (TODO.md section 4).
 	if len(psInfo) < 1 {
 		fmt.Fprintf(os.Stderr, "No containers found for the quadlets in %s.\n", quadctl.SearchDir)
-		return nil
+		return nil, nil
 	}
 
-	//cmd := []string{"podman", "stats", "--no-stream"}
 	cmd := []string{"podman", "stats"}
-
 	for _, info := range psInfo {
-		id := strings.TrimSpace(info[0])
-		cmd = append(cmd, id)
+		cmd = append(cmd, strings.TrimSpace(info[0]))
 	}
 
-	return runner.RunStreaming(quadctl.Runner, cmd)
+	c := NewCommand("Showing live container stats")
+	c.Cmd = cmd
+	c.Stream = true
+	return []Command{c}, nil
 }
 
 func HandleImages(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
@@ -199,7 +206,6 @@ func HandleImages(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) error {
 }
 
 func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
-
 	var commands []Command
 
 	cmd := []string{"podman", "logs"}
@@ -234,12 +240,8 @@ func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command,
 	}
 	cmd = append(cmd, containerName)
 
-	if quadctl.IsPrintOnly {
-		c := NewCommand(fmt.Sprintf("Opening podman logs for container %s", containerName))
-		c.Cmd = cmd
-		commands = append(commands, c)
-	} else {
-		runner.RunStreaming(quadctl.Runner, cmd)
-	}
-	return commands, nil
+	c := NewCommand(fmt.Sprintf("Opening podman logs for container %s", containerName))
+	c.Cmd = cmd
+	c.Stream = true
+	return append(commands, c), nil
 }

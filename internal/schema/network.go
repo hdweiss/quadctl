@@ -228,19 +228,6 @@ func optContainersConfModuleNetwork() SchemaOption {
 	}
 }
 
-// optNetworkSchema generates the complete network schema
-func optNetworkSchema() Schema {
-	options := GetNetworkOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Network",
-			Options: options,
-		},
-	}
-}
-
 func optNetworkDeleteOnStop() SchemaOption {
 	return SchemaOption{
 		QuadletKey:      "DeleteOnStop",

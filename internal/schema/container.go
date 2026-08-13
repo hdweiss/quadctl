@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -1463,80 +1462,47 @@ func PopulateValidators(options []SchemaOption) {
 	}
 }
 
-// optSchema generates the complete container schema
-func GenerateSchema() Schema {
-	options := GetContainerOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Container",
-			Options: options,
-		},
-	}
-}
-
-// ValidateSchema performs basic validation on the generated schema
-func ValidateSchema(schema Schema) error {
-	for _, schemaType := range schema {
-		for _, opt := range schemaType.Options {
-			if opt.QuadletKey == "" {
-				return fmt.Errorf("option missing quadlet-key")
+// ValidateSchema checks that the option model is well formed: every option names a quadlet
+// key, carries templates that at least look like templates, and any validator it declares is
+// a regex that compiles. Nothing in the running tool reads this - it is a check on the data
+// itself, and the schema test is what runs it.
+//
+// PodmanKey and PodmanTemplate may be empty: a handful of keys (ServiceName, and the [Kube]
+// keys that configure the generated unit) exist for systemd and have no podman spelling.
+func ValidateSchema(options []SchemaOption) error {
+	for _, opt := range options {
+		if opt.QuadletKey == "" {
+			return fmt.Errorf("option missing quadlet-key")
+		}
+		if opt.Description == "" {
+			return fmt.Errorf("option %s missing description", opt.QuadletKey)
+		}
+		if err := validateTemplate(opt.QuadletTemplate); err != nil {
+			return fmt.Errorf("option %s has an invalid quadlet-template: %w", opt.QuadletKey, err)
+		}
+		if opt.PodmanTemplate != "" {
+			if err := validateTemplate(opt.PodmanTemplate); err != nil {
+				return fmt.Errorf("option %s has an invalid podman-template: %w", opt.QuadletKey, err)
 			}
-			if opt.PodmanKey == "" {
-				return fmt.Errorf("option %s missing podman-key", opt.QuadletKey)
+		}
+		for _, val := range opt.Values {
+			if val.Validator == "" {
+				continue
 			}
-			if opt.Description == "" {
-				return fmt.Errorf("option %s missing description", opt.QuadletKey)
-			}
-			if opt.QuadletTemplate == "" {
-				return fmt.Errorf("option %s missing quadlet-template", opt.QuadletKey)
-			}
-			if opt.PodmanTemplate == "" {
-				return fmt.Errorf("option %s missing podman-template", opt.QuadletKey)
-			}
-
-			// Validate templates are valid Go templates
-			_, err := NewTemplateValidator(opt.QuadletTemplate)
-			if err != nil {
-				return fmt.Errorf("option %s has invalid quadlet-template: %w", opt.QuadletKey, err)
-			}
-			_, err = NewTemplateValidator(opt.PodmanTemplate)
-			if err != nil {
-				return fmt.Errorf("option %s has invalid podman-template: %w", opt.QuadletKey, err)
-			}
-
-			// Validate regex patterns
-			for _, val := range opt.Values {
-				if val.Validator != "" {
-					_, err := regexp.Compile(val.Validator)
-					if err != nil {
-						return fmt.Errorf("option %s value %s has invalid validator regex: %w", opt.QuadletKey, val.Value, err)
-					}
-				}
+			if _, err := regexp.Compile(val.Validator); err != nil {
+				return fmt.Errorf("option %s value %s has an invalid validator regex: %w", opt.QuadletKey, val.Value, err)
 			}
 		}
 	}
 	return nil
 }
 
-// ExportJSON exports the schema to JSON
-func ExportJSON(schema Schema) (string, error) {
-	data, err := json.MarshalIndent(schema, "", "  ")
-	if err != nil {
-		return "", err
+// validateTemplate is a shape check, not a parse: template.Must in each Get*Options does the
+// parsing. A template with no variables at all is fine and common - a boolean option renders
+// to the flag alone ("--read-only") - so what is worth checking is that the braces match.
+func validateTemplate(templateStr string) error {
+	if strings.Count(templateStr, "{{") != strings.Count(templateStr, "}}") {
+		return fmt.Errorf("template has unmatched braces: %q", templateStr)
 	}
-	return string(data), nil
-}
-
-// NewTemplateValidator validates a template string
-func NewTemplateValidator(templateStr string) (interface{}, error) {
-	// Simple validation - check that template has expected structure
-	if !strings.Contains(templateStr, "{{") {
-		return nil, fmt.Errorf("template missing template variables")
-	}
-	if !strings.Contains(templateStr, "}}") {
-		return nil, fmt.Errorf("template has unmatched braces")
-	}
-	return nil, nil
+	return nil
 }

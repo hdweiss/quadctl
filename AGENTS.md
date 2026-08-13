@@ -34,19 +34,26 @@ sed -e "s|^quadlet.src.path=.*|quadlet.src.path=$SCRATCH/src|" \
 # then: QUADCTL_CONFIG_DIR=$SCRATCH/cfg ./quadctl <cmd> -p
 ```
 
-The three path substitutions also remove the `{{.home}}` placeholders the shipped template carries (normally expanded when the default config is installed). Leave the `{{.user}}` variables in the `systemd.*` lines alone — those are expanded at runtime to `--user` when rootless. Setting `systemd.enabled=false` is what exercises the podman-direct path; there is currently no CLI flag to turn systemd mode off once the config enables it (`TODO.md` §3), so this is the only way to test that path.
+The three path substitutions also remove the `{{.home}}` placeholders the shipped template carries (normally expanded when the default config is installed). Leave the `{{.user}}` variables in the `systemd.*` lines alone — those are expanded at runtime to `--user` when rootless. Setting `systemd.enabled=false` is what exercises the podman-direct path. `--no-systemd` now overrides a config that enables it, so a throwaway config with `systemd.enabled=true` is a fine way to test both paths — passing `-s` and `--no-systemd` together is an error, not a silent winner.
 
 ## Commands
 
 ```bash
-go build -o quadctl .         # or ./build.sh — same thing
-go test -v ./...              # run all tests
+make                          # list the targets
+make check                    # build + vet + lint + test -race — what CI runs, in CI's order
+make build                    # ./quadctl, with version information stamped in
+make test                     # go test -race ./...
+make lint                     # go tool golangci-lint run
+make golden                   # regenerate internal/command/testdata/commands.golden
+make snapshot                 # cross-build every release archive into ./dist, publish nothing
+
 go test -v ./internal/quadlet/...   # test a single package
 go test -v -run TestVolumeQuadletOptionsToPodmanTableDriven ./internal/podman/   # single test
-go vet ./...
 ```
 
-CI (`.github/workflows/go.yml`) runs `go build -v ./...`, `go vet ./...` and `go test -v ./...` on push/PR to `main`. There is no linter configured. Vet is clean — keep it that way.
+CI (`.github/workflows/go.yml`) runs build, `go vet ./...`, `go tool golangci-lint run` and `go test -race -v ./...` on every branch and PR; `build_release.yml` calls the same workflow, so a tag that fails any of it doesn't publish. All four are clean — keep them that way.
+
+`golangci-lint` and `goreleaser` are pinned as `go.mod` `tool` dependencies, so `go tool <name>` is the same version CI uses and there is nothing to install. Two consequences worth knowing: `go.mod`/`go.sum` are large because those tools' transitive graphs are recorded there, and **after any `go get -tool` you must run `go mod tidy` and rebuild** — a new tool's graph can move a shared dependency and leave `go.sum` incomplete for an existing one, which surfaces as a "missing go.sum entry" in a package you never touched.
 
 Tests live beside the code with fixtures in `testdata/`. `.gitignore` is anchored to the
 repo root (`/*.container`, …) precisely so those fixtures can be committed — don't widen it

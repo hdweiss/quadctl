@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"io"
 	"strings"
@@ -156,7 +157,7 @@ func TestUnknownFlagIsAUsageError(t *testing.T) {
 	if err := r.byName["create"].flagSet.Parse([]string{"-nope"}); err == nil {
 		t.Fatal("parsing -nope succeeded, want an error")
 	}
-	if err := usageError(flag.ErrHelp); err != errHelp {
+	if err := usageError(flag.ErrHelp); !errors.Is(err, errHelp) {
 		t.Errorf("usageError(flag.ErrHelp) = %v, want errHelp", err)
 	}
 }

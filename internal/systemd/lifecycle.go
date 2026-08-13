@@ -9,13 +9,11 @@ import (
 	"github.com/fkmiec/quadctl/internal/command"
 	"github.com/fkmiec/quadctl/internal/podman"
 	"github.com/fkmiec/quadctl/internal/quadlet"
-	"github.com/fkmiec/quadctl/internal/runner"
 	"github.com/fkmiec/quadctl/internal/tui"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
 func HandleStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-
 	commands := []command.Command{}
 
 	// Always (re)install the quadlet definitions, whether or not they're already
@@ -29,8 +27,9 @@ func HandleStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command
 	}
 	commands = append(commands, cmd...)
 
-	// Stop if already running (podman ps -a only returns a list if systemd services are running. Once stopped, it returns empty.)
-	if info, err := podman.ContainerPS(quadctl.Runner, quadlets); err == nil && len(info) > 0 {
+	// Stop first if any of these quadlets' containers is up. 'podman ps -a' lists exited
+	// containers too, so the presence of rows is not the same question (TODO.md section 2).
+	if info, err := podman.ContainerPS(quadctl.Runner, quadlets); err == nil && podman.AnyRunning(info) {
 		cmd, err := HandleStop(quadctl, quadlets, false)
 		if err != nil {
 			return nil, err
@@ -62,7 +61,6 @@ func HandleStart(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command
 }
 
 func HandleStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, stopNetAndVol bool) ([]command.Command, error) {
-
 	commands := []command.Command{}
 
 	// Stop the systemd services
@@ -97,7 +95,6 @@ func HandleStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet, stopNetAndV
 }
 
 func HandleStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-
 	if quadctl.IsLongStatus {
 		commands := []command.Command{}
 
@@ -110,14 +107,13 @@ func HandleStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]comman
 		for _, q := range quadlets {
 			args = append(args, q.ServiceName)
 		}
-		if quadctl.IsPrintOnly {
-			c := command.NewCommand("Getting systemd status")
-			c.Cmd = args
-			commands = append(commands, c)
-		} else {
-			runner.RunStreaming(quadctl.Runner, args)
-		}
-		return commands, nil
+		// A streaming command in the list, rather than a shell-out from in here: that is what
+		// gives it print mode, a label and an exit code like every other command (TODO.md
+		// section 3).
+		c := command.NewCommand("Getting systemd status")
+		c.Cmd = args
+		c.Stream = true
+		return append(commands, c), nil
 	} else {
 		if err := displayListOfSystemdInstalledQuadlets(quadctl, quadlets); err != nil {
 			return nil, err
@@ -127,7 +123,6 @@ func HandleStatus(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]comman
 }
 
 func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-
 	commands := []command.Command{}
 
 	// Only .container and .kube quadlets run a process whose logs are worth tailing.
@@ -163,14 +158,10 @@ func HandleLogs(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.
 	if serviceName != "" {
 		cmd = append(cmd, "-u", serviceName)
 	}
-	if quadctl.IsPrintOnly {
-		c := command.NewCommand("Opening systemd logs")
-		c.Cmd = cmd
-		commands = append(commands, c)
-	} else {
-		runner.RunStreaming(quadctl.Runner, cmd)
-	}
-	return commands, nil
+	c := command.NewCommand("Opening systemd logs")
+	c.Cmd = cmd
+	c.Stream = true
+	return append(commands, c), nil
 }
 
 func HandleReload(quadctl *quadlet.State) ([]command.Command, error) {

@@ -73,7 +73,7 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   detect failure. Track failures and exit non-zero; decide and document whether a failing
   command aborts the remaining ones (probably yes for `start`, no for `stop`/`rm`).
 
-- [ ] **`.kube` option schema is never loaded — two stacked bugs.**
+- [x] **`.kube` option schema is never loaded — two stacked bugs.**
   1. `schema.QuadletOptions` has no `"kube"` case (`schema/options.go`), so it returns
      `nil` and `AllQuadletOptions()["kube"]` is a nil map. Every `[Kube]` key except the hand-handled
      `Yaml`/`ServiceName`/`PodmanArgs` is dropped with a "Quadlet kube option not defined"
@@ -83,6 +83,13 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
      the loop *copy* (`option.QuadletTemplateParsed = …`, `schema/kube.go:26-27`) instead of
      `options[i].…` like every other schema file, leaving `PodmanTemplateParsed` nil →
      nil dereference at `util/parser.go:731`.
+  *Fixed:* `QuadletOptions` has the `"kube"` case and pre-parses through `options[i]`.
+  The three keys that describe the *unit* rather than the `podman kube play` invocation
+  (`ExitCodePropagation`, `SetWorkingDirectory`, `KubeDownForce`) are skipped deliberately;
+  `Network=` resolves through `Quadlet.ResolveRef` and `ConfigMap=` resolves relative to the
+  quadlet file. `internal/schema/schema_test.go` now walks all seven option sets and fails
+  if any one of them is unindexed or has a nil parsed template, so a new quadlet type
+  cannot repeat this.
 
 - [x] **Panics reachable from ordinary input.**
   - `util/parser.go:564` — `all[podID].GeneratedNames["pod_name"]` dereferences a nil
@@ -125,10 +132,13 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `Quadlet.RefNames`; a value that names no quadlet is passed through as written. Documented
   in `README.md` under "Resource naming".
 
-- [ ] **`remove_volumes` / `remove_networks` are ignored by the non-systemd `remove`.**
+- [x] **`remove_volumes` / `remove_networks` are ignored by the non-systemd `remove`.**
   `HandleRemove` (`core/handlers.go:241-279`) unconditionally emits `podman volume rm` /
   `network rm`; only the systemd path honors the config. `quadctl rm` destroys data the
   user explicitly asked to keep.
+  *Fixed:* both paths honor the settings. A kept resource is not silently absent from the
+  output — it gets a `Keeping <name>` line saying which setting kept it, because silence
+  reads as "removed" to anyone watching.
 
 - [x] **`DotQuadletsPath` leaks across directories** (`util/parser.go:191`, set but never cleared).
   `InitAllQuadlets` loops over every directory under `quadlet.src.path` reusing the same
@@ -160,16 +170,21 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `getSearchDir` exits 1 when the path doesn't resolve. `quadctl ls traefik` silently
   prints the *root* systemd tree; `quadctl ls doesnotexist` errors. Either honor the arg
   or reject it explicitly.
+  **Still open, and deliberately: this is a decision, not a fix.** "Honor it" and "reject
+  it" are different commands, and `list` is the one subcommand whose whole job is to show
+  what is configured rather than what is in front of you.
 
 - [x] **`list` shows dotfiles.** **[verified]** — `.git` appeared in the tree even though
   the directory selector deliberately skips dot-prefixed entries.
   *Fixed by `PLAN.md` Phase 4:* the tree skips them too.
 
-- [ ] **"Is it already running?" checks are wrong on both paths.**
+- [x] **"Is it already running?" checks are wrong on both paths.**
   Non-systemd `HandleStart` inspects only the *first* ps row (`core/handlers.go:120-121`) —
   one stopped container at the head means nothing gets restarted; one running container
   means everything gets stopped. The systemd variant (`:700`) stops whenever ps returns any
   row at all, including `Exited` ones.
+  *Fixed:* one answer for both, `podman.AnyRunning` — any row whose STATUS column starts
+  with `Up`. Covered by `internal/podman/query_test.go`.
 
 - [x] **ps/stats/images/logs match containers by suffix** (`core/handlers.go:1772`).
   `strings.HasSuffix(parts[1], q.GeneratedNames["container"])` made quadlet `web` match an
@@ -220,26 +235,40 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   Full schemas exist (`schema/image.go`, `schema/build.go`) but the extension map
   (`util/parser.go:18`) doesn't list them. Also: any unrecognized extension in a quadlet
   directory is skipped silently — worth at least a `-v` warning.
+  *Half done:* the silence is gone. `.image` and `.build` now produce a named warning at
+  default verbosity ("recognized but not supported"), and any other unrecognized extension
+  is reported under `-v`. **Still open:** actually supporting them, which is a feature and
+  lives in `FEATURES.md`, not a fix.
 
-- [ ] **`[Pod] Volume=` is not treated as a dependency** (`quadlet/parser.go`, `extractDependencies` only
+- [x] **`[Pod] Volume=` is not treated as a dependency** (`quadlet/parser.go`, `extractDependencies` only
   looks at `Network=` for pods), so a pod's volume may not be created first.
+  *Fixed:* `extractDependencies` is one switch over the quadlet type with one `addRef`
+  closure, so `.pod` picks up `Volume=` and `.kube` picks up `Network=`, which it also
+  used to miss.
 
-- [ ] **k8s YAML handling is fragile** (`quadlet/parser.go`, `readK8sYaml`): the read error is
+- [x] **k8s YAML handling is fragile** (`quadlet/parser.go`, `readK8sYaml`): the read error is
   discarded (`yml, _ := readYamlFile(...)`), only a single `kind: Pod` document is
   supported (multi-document YAML is the norm for `podman kube play`), and every failure is
   an `os.Exit(1)` with a bare message. A `[Kube]` section without `Yaml=` calls
   `readK8sYaml("")` and dies with a confusing error.
-  *Partly addressed by `PLAN.md` 1.2:* the failures are errors now, naming the file. The
-  discarded read error and single-document limitation are still open.
+  *Partly addressed by `PLAN.md` 1.2:* the failures are errors now, naming the file.
+  *Finished:* the read error is propagated, `---`-separated documents are all parsed, a
+  document whose `kind` quadctl doesn't handle is reported by kind rather than dropped, and
+  a `[Kube]` section without `Yaml=` is its own error instead of a read of `""`.
 
-- [ ] **`podman quadlet list` output is split on `,`** (`systemd/list.go`) — breaks on
+- [x] **`podman quadlet list` output is split on `,`** (`systemd/list.go`) — breaks on
   any path containing a comma. The systemctl fallback puts `ServiceName` in the
   "UNIT NAME" column without the `.service` suffix (`:1750`), so the two code paths
   produce different tables.
+  *Fixed:* one `fieldSep` constant is used to build the `--format` string and to split the
+  result, so the separator can't drift from the format again, and the fallback appends
+  `.service`.
 
-- [ ] **Writability check tests permission bits, not access** (`systemd/install.go`, `HandleCreate`):
+- [x] **Writability check tests permission bits, not access** (`systemd/install.go`, `HandleCreate`):
   `perm&0200 != 0200 && perm&0020 != 0020 && perm&0002 != 0002` ignores ownership entirely.
   Just attempt the write (or use `unix.Access`) and report the real error.
+  *Fixed:* it creates and removes a temp file in the target directory and reports whatever
+  the OS said, keeping the rootless hint.
 
 - [x] **`CopyDir` skips nested subdirectories** (`util/files.go:224`), so any non-drop-in
   subdirectory in a quadlet app dir (a `config/` folder that gets bind-mounted, for
@@ -294,19 +323,30 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   configured paths" (`IsListAll`) for `list`.
   *Half done by `PLAN.md` 2.2:* the table exists (`registry.go`) and each flag is declared
   once, so the help text no longer drifts. **Still open:** which subcommands take which flag
-  is unchanged, and `-a` still means two different things. Phase 4.
+  is unchanged apart from `-p` on `ps`/`stats` (see below), and `-a` still means two
+  different things. **Deliberately open: this is a decision about the CLI's surface, not a
+  fix.** Giving `-a` one meaning renames a flag people type, and adding `-v`/`-f`
+  everywhere means deciding what they do on the subcommands that don't have them today.
 
 - [x] **Every flag is listed twice in help output** because short and long forms are
   registered as separate flags (`quadctl ls -h` shows `-a` and `-all` as two entries with
   the same text). A small custom usage printer would collapse these.
   *Fixed by `PLAN.md` 2.2:* `printFlags` renders one entry per `flagSpec` ("-a, --all").
 
-- [ ] **`status -p` has no effect** on the non-systemd path (it calls `HandlePS` directly),
+- [x] **`status -p` has no effect** on the non-systemd path (it calls `HandlePS` directly),
   and `-l/--long` is accepted but meaningless there (`main.go:56-64`).
+  *Fixed:* `HandlePS` returns the `podman ps` argv as a command under `-p` rather than
+  running the query, `ps` and `stats` accept `-p` at all now, and `status` without `-s`
+  says on stderr that `-l` applies to `systemctl status` and is being ignored — an
+  accepted flag that does nothing is worse than one that isn't accepted.
 
-- [ ] **`status`/`logs` bypass the command pipeline** when not in print mode
+- [x] **`status`/`logs` bypass the command pipeline** when not in print mode
   (`core/handlers.go:938`, `:995` call `runCommand` directly), so they don't get the
   spinner/label/error handling everything else has.
+  *Fixed:* they return commands like everything else. Streaming output is a property of the
+  command (`Command.Stream`), so `RunCommands` stays the only place anything executes:
+  a streaming command prints its label, skips the spinner — which would fight the output it
+  is redrawing over — and writes straight through.
 
 ## 4. Output & UX
 
@@ -393,9 +433,12 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   run first. *Fixed by `PLAN.md` Phase 4:* `main.checkRequiredBinaries` looks them up before
   dispatch — `systemctl` only under `-s`, and neither in print mode, which runs nothing.
 
-- [ ] **No `--version`.** Release binaries carry no version at all
+- [x] **No `--version`.** Release binaries carry no version at all
   (`.github/workflows/build_release.yml` has no `-ldflags -X`), so bug reports can't
-  identify a build.
+  identify a build. *Fixed by `PLAN.md` 6.4:* GoReleaser stamps `main.version`/`commit`/`date`,
+  `make build` stamps the same three from `git describe`, and an unstamped `go build` falls
+  back to the module version and VCS stamps the toolchain embeds — so every way of building
+  quadctl answers `--version` with something specific.
 
 - [x] **Default paths disagree between code and shipped config**: `initState` used
   `/etc/containers/systemd/users` for `QuadletUserPath`, the template ini
@@ -435,14 +478,20 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   `resName/resType` derivation appeared in six places. *Done in `PLAN.md` Phase 4:* the name
   is resolved once at parse time and read back through `Quadlet.DisplayName`.
 
-- [ ] **Dead code to delete or wire up.** `schema/validator.go` (~256 lines) was deleted in
+- [x] **Dead code to delete or wire up.** `schema/validator.go` (~256 lines) was deleted in
   `PLAN.md` 2.3: its `Handler`/`AttributeSchema` machinery was a parallel model that shared
   nothing with the live `SchemaOption` one, so a future `validate` command (`FEATURES.md`)
-  gains nothing from it. **Still unused, still open:**
-  `GetKubeSchema`/`GetImageSchema`/`GetBuildSchema`/`GetVolumeSchema`, `ValidateSchema`,
-  `config.ListFiles`, `config.DeleteFile`, `optKubeAutoUpdate` (`schema/kube.go:58`, shadowed
-  by `optAutoUpdate()` in the list). `GetPodmanOptionsMap`/`assemblePodmanOptionsMap` went in
+  gains nothing from it. `GetPodmanOptionsMap`/`assemblePodmanOptionsMap` went in
   `PLAN.md` 6.1, when the option indexing moved into `schema`.
+  *Finished:* `GenerateSchema`, `ExportJSON`, `NewTemplateValidator` and the
+  `SchemaType`/`Schema`/`OptionMetadata` types they needed are gone;
+  `Get*Schema` and `optKubeAutoUpdate` went with the `.kube` fix above.
+  `ValidateSchema` was the one worth keeping rather than deleting — it is now what
+  `internal/schema/schema_test.go` calls, so the option sets are checked on every `go test`
+  instead of by a function nobody ran. `optKubeAutoUpdate` wasn't deleted either — it is the
+  correct `[Kube]` spelling and is now the one the kube option set uses, which is what it was
+  written for. `golangci-lint`'s `unused` keeps this list honest from here, which is why this
+  entry does not need to exist again.
 
 - [x] **Drop the dot-imports** (`main.go:10-11`, `util/options.go:4`) — `. "…/core"`,
   `. "…/schema"` make it impossible to tell where `Command`, `SchemaOption`,
@@ -497,46 +546,76 @@ New feature ideas are deliberately **not** here — see `FEATURES.md`.
   is why there were none. *Fixed in `PLAN.md` 1.4:* the patterns are anchored to the repo
   root (`/*.container`, …). Don't widen them back.
 
-- [ ] **`go.mod` isn't tidy** — `bubbletea`, `spinner` and `goccy/go-yaml` are imported
+- [x] **`go.mod` isn't tidy** — `bubbletea`, `spinner` and `goccy/go-yaml` are imported
   directly but marked `// indirect`. `go mod tidy` moves 10 lines as of this writing.
+  *Fixed:* the four real dependencies are in the direct block. Note that `go.mod` and
+  `go.sum` are large now and that is expected — `golangci-lint` and `goreleaser` are `tool`
+  dependencies, so their transitive graphs are recorded here. Rerun `go mod tidy` after any
+  `go get -tool`: the tool's own graph can leave `go.sum` incomplete for the *other* tool's
+  build, which fails as a "missing go.sum entry" in an unrelated package.
 
-- [ ] **Release workflow doesn't run tests or vet** before publishing binaries
+- [x] **Release workflow doesn't run tests or vet** before publishing binaries
   (`.github/workflows/build_release.yml:25`). Phase 5. `build.sh` now builds the package
   (`PLAN.md` 2.2 — it had to, once `main` was more than one file).
+  *Fixed by `PLAN.md` 6.5:* `build_release.yml` calls `go.yml` as a reusable workflow and
+  the release job `needs` it, so build/vet/lint/test gate every tag — called rather than
+  copied, so the gate can't drift from CI. `build.sh` is gone; `make build` is what it was.
 
-- [ ] **CI only triggers on `main`** (`.github/workflows/go.yml:6-10`), so nothing runs on
-  this branch.
+- [x] **CI only triggers on `main`** (`.github/workflows/go.yml:6-10`), so nothing runs on
+  this branch. *Fixed by `PLAN.md` 6.5:* `push` and `pull_request` are unfiltered. Tags are
+  excluded from `push` only because `build_release.yml` already runs the same workflow for
+  them.
 
-- [ ] **No linter beyond `go vet`.** `golangci-lint` is the de facto standard meta-linter;
+- [x] **No linter beyond `go vet`.** `golangci-lint` is the de facto standard meta-linter;
   `unused` alone would find the dead code §5 still tracks by hand. Pin it as a `go.mod`
   `tool` dependency (`go get -tool`, Go 1.24+) rather than installing it ad hoc, so CI and
-  local runs use the same version. *`PLAN.md` 6.3 — independent of the refactor.*
+  local runs use the same version. *Done in `PLAN.md` 6.3:* `.golangci.yml` runs the standard
+  set plus `errorlint`, `misspell`, `nilerr`, `unconvert`, `usestdlibvars`, `wastedassign`
+  and `whitespace`; `go tool golangci-lint run` reports 0 issues and CI runs it.
+  One thing worth knowing: the defaults cap each linter at three findings and silently drop
+  the rest, so `max-issues-per-linter` and `max-same-issues` are set to 0. Without that,
+  "the build is clean" is a function of how many times you have run it.
 
-- [ ] **The release workflow hand-rolls what GoReleaser does.**
+- [x] **The release workflow hand-rolls what GoReleaser does.**
   `.github/workflows/build_release.yml` runs three cross-compiles and three `tar`
   invocations by hand and still carries the workflow template's `# Replace this with your
   actual build command` comment. There are no checksums and no changelog. A
   `.goreleaser.yaml` replaces the lot and does Phase 5's `-ldflags -X` version stamping on
-  the way. *`PLAN.md` 6.4.*
+  the way. *Done in `PLAN.md` 6.4.* The archive names are deliberately the ones the old
+  workflow produced (`quadctl_linux_amd64`, `_arm64`, `_armhf`) rather than GoReleaser's
+  versioned default, so nothing pinned to a download URL breaks; they are real `.tar.gz`
+  now rather than bare tars.
 
-- [ ] **CI details.** `go test` runs without `-race`; both workflows are on
+- [x] **CI details.** `go test` runs without `-race`; both workflows are on
   `actions/setup-go@v4` (v5+ is current); and the Go version is pinned `'1.26.3'` in
-  `go.yml` but `'1.26'` in `build_release.yml`. *`PLAN.md` 6.5.*
+  `go.yml` but `'1.26'` in `build_release.yml`. *Done in `PLAN.md` 6.5:* `-race`,
+  `actions/setup-go@v5` with caching, and `go-version-file: go.mod` in both — so the Go
+  version has exactly one home and it is the one the compiler already reads.
 
-- [ ] **No task runner — and deliberately none yet.** `go build ./...`, `go test ./...` and
+- [x] **No task runner — and deliberately none yet.** `go build ./...`, `go test ./...` and
   `go vet ./...` are the build system; a Makefile wrapping only those is noise. Revisit once
-  6.3–6.5 create real targets (lint, cover, cross-build, release dry-run). *`PLAN.md` 6.6.*
+  6.3–6.5 create real targets (lint, cover, cross-build, release dry-run). *Done in
+  `PLAN.md` 6.6:* a `Makefile` with `build` (stamped), `check` (what CI runs, in CI's order),
+  `cover`, `golden`, `snapshot`, `release-check` and `clean`. `make` on its own lists them.
 
 ## 7. Documentation
 
-- [ ] **README usage block is stale** (`README.md:70-101`): it predates `-a`, `-p`, `-v`,
+- [x] **README usage block is stale** (`README.md:70-101`): it predates `-a`, `-p`, `-v`,
   `-l`, `-d`, `-f`, `--pargs`, `--exec` and the `pull` command's flags, and the "Flags"
   section only lists `-s`.
+  *Fixed:* the block is the binary's actual output, and a "Flags by command" table says
+  which subcommand takes which flag — including that `list -a` means something different
+  from everyone else's `-a` (§3), which is at least documented while it is still true.
+  The install command was also stale in a way that would have broken on the next release:
+  GoReleaser publishes `.tar.gz`, not `.tar`.
 
-- [ ] **Config keys are undocumented** — README describes only the three path settings
+- [x] **Config keys are undocumented** — README describes only the three path settings
   (`README.md:64-66`); `systemd.enabled`, `use_subdirectories`, `use_symbolic_links`,
   `remove_volumes`, `remove_networks` and the `systemd.*` command templates aren't
   mentioned anywhere outside the ini comments.
+  *Fixed:* all fourteen keys are in the README as three tables (paths, behaviour, systemd
+  command templates), with defaults, plus the note that values are not environment-expanded
+  and that unknown keys are reported rather than dropped.
 
 - [x] **Truncated comment in the shipped config**: "Replace  with explicit values"
   (`util/config/quadctl.ini:12` and `:32`) — a word was missing, and it should say which

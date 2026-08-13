@@ -40,12 +40,12 @@ const valuePlaceholder = "\x00quadctl-value\x00"
 func OptionArgs(qType string, options map[string]schema.SchemaOption, k string, v string) ([]string, error) {
 	opt, ok := options[k]
 	if !ok {
-		return nil, fmt.Errorf("Quadlet %s option not defined: %s", qType, k)
+		return nil, fmt.Errorf("quadlet %s option not defined: %s", qType, k)
 	}
 
 	var buf bytes.Buffer
 	if err := opt.PodmanTemplateParsed.Execute(&buf, templateOption{Key: opt.PodmanKey, Value: valuePlaceholder}); err != nil {
-		return nil, fmt.Errorf("Error formatting %s option %s: %w", qType, k, err)
+		return nil, fmt.Errorf("formatting %s option %s: %w", qType, k, err)
 	}
 
 	args := quadlet.ParseFields(buf.String())

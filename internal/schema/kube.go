@@ -4,27 +4,32 @@ import "text/template"
 
 // GenerateKubeOptions generates all kube schema options
 func GetKubeOptions() []SchemaOption {
+	// The kube spellings, not the container ones: [Kube] AutoUpdate= is an annotation on the
+	// workload rather than a label on a container, and the rest carry kube-specific values.
 	options := []SchemaOption{
 		optYaml(),
 		optKubeServiceName(),
-		optAutoUpdate(),
+		optKubeAutoUpdate(),
 		optConfigMap(),
 		optExitCodePropagation(),
 		optKubeDownForce(),
-		optLogDriver(),
-		optNetwork(),
-		optPublishPort(),
+		optKubeLogDriver(),
+		optKubeNetwork(),
+		optKubePublishPort(),
 		optSetWorkingDirectory(),
-		optUserNS(),
+		optKubeUserNS(),
 		optPodmanArgsKube(),
 		optGlobalArgsKube(),
 		optContainersConfModuleKube(),
 	}
 
-	// Pre-parse templates for all options to catch errors early. Will panic if any template is invalid, which is desirable during development.
-	for _, option := range options {
-		option.QuadletTemplateParsed = template.Must(template.New("quadlet").Parse(option.QuadletTemplate))
-		option.PodmanTemplateParsed = template.Must(template.New("podman").Parse(option.PodmanTemplate))
+	// Pre-parse templates for all options to catch errors early. Will panic if any template is
+	// invalid, which is desirable during development. Assigning through the index and not the
+	// loop variable: a copy's parsed templates are thrown away, leaving PodmanTemplateParsed
+	// nil and OptionArgs dereferencing it (TODO.md section 1).
+	for i, option := range options {
+		options[i].QuadletTemplateParsed = template.Must(template.New("quadlet").Parse(option.QuadletTemplate))
+		options[i].PodmanTemplateParsed = template.Must(template.New("podman").Parse(option.PodmanTemplate))
 	}
 
 	return options
@@ -224,18 +229,5 @@ func optContainersConfModuleKube() SchemaOption {
 		PodmanTemplate:  "{{.Key}} {{.Value}}",
 		AllowMultiple:   true,
 		Values:          []OptionValue{},
-	}
-}
-
-// GetKubeSchema generates the complete kube schema
-func GetKubeSchema() Schema {
-	options := GetKubeOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Kube",
-			Options: options,
-		},
 	}
 }

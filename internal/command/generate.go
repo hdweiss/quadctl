@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -15,8 +16,10 @@ func generateCreateCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string
 	var warnings []string
 	var cmd []string
 
-	// Warn about ignored sections
-	for sec := range q.Sections {
+	// Warn about ignored sections. Sorted: map order here is as visible as map order in the
+	// arguments themselves, and a quadlet with both sections reported them in either order
+	// from one run to the next (PLAN.md 1.3).
+	for _, sec := range slices.Sorted(maps.Keys(q.Sections)) {
 		// standard systemd sections not used in CLI calls
 		if sec == "Install" || sec == "Unit" {
 			warnings = append(warnings, InfoPrefix+fmt.Sprintf("ignoring [%s] section (systemd only)", sec))
@@ -248,6 +251,21 @@ func generateStartupCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]strin
 						continue // Yaml is parsed ahead of time and is appended at the end as the file argument for podman play kube
 					case "ServiceName":
 						continue // ServiceName is for systemd and does not affect Podman CLI
+					case "ExitCodePropagation":
+						continue // Sets a property on the generated systemd service, not a podman flag
+					case "SetWorkingDirectory":
+						continue // Sets WorkingDirectory on the generated systemd service, not a podman flag
+					case "KubeDownForce":
+						continue // Belongs to 'podman kube down' (see generateStopCommand), not to play
+					case "Network":
+						// Special case, as for containers and pods: a value naming a .network
+						// quadlet is the network that quadlet creates for it.
+						cmd = append(cmd, "--network", q.ResolveRef(v))
+					case "ConfigMap":
+						// Quadlet reads a relative path relative to the unit file; podman would
+						// read it relative to the working directory. Resolve it the way the
+						// quadlet file means it, as Yaml= is resolved at parse time.
+						cmd = append(cmd, "--configmap", resolveRelativeToQuadlet(q, v))
 					case "PodmanArgs": // Handled above
 						continue
 					default:
@@ -270,17 +288,15 @@ func generateStartupCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]strin
 		resName = q.ResourceName
 	}
 
-	// 3. Determine if we should start it
-	shouldStart := true
-	if q.Type == ".container" && q.ParentPod != "" {
-		// Prompt: Create start commands ONLY for pods and loose containers
-		shouldStart = false
-	}
+	// 3. Determine if we should start it.
+	// Create start commands ONLY for pods and loose containers.
+	shouldStart := q.Type != ".container" || q.ParentPod == ""
 
 	if shouldStart {
-		if q.Type == ".pod" {
+		switch q.Type {
+		case ".pod":
 			cmd = append(cmd, "podman", "pod", "start", resName)
-		} else if q.Type == ".container" {
+		case ".container":
 			cmd = append(cmd, "podman", "container", "start", resName)
 		}
 	} else if q.Type == ".container" {
@@ -292,7 +308,6 @@ func generateStartupCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]strin
 
 // generateStartupCommand creates necessary 'start' commands based on existence.
 func generateRunCommand(quadctl *quadlet.State, q *quadlet.Quadlet) ([]string, []string) {
-
 	if q.Type == ".kube" {
 		// For kube type, just reuse the generateStartupCommand for kube types.
 		return generateStartupCommand(quadctl, q)
@@ -353,6 +368,15 @@ func resolveVolumeRef(q *quadlet.Quadlet, val string) string {
 		return resolved
 	}
 	return resolved + ":" + rest
+}
+
+// resolveRelativeToQuadlet turns a path written relative to the quadlet file into one that
+// means the same thing from wherever quadctl happens to be run.
+func resolveRelativeToQuadlet(q *quadlet.Quadlet, path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(filepath.Dir(q.Filepath), path)
 }
 
 // getRawPodmanArgs turns the PodmanArgs= lines of a section into argv. Each line is a command

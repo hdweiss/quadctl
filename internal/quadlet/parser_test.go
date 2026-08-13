@@ -304,3 +304,92 @@ func TestParseDotQuadlets(t *testing.T) {
 		}
 	}
 }
+
+// TestReadK8sYamlMultiDocument covers TODO.md section 2: a Kubernetes YAML is usually several
+// documents, and only the first one used to be read. Every kind: Pod contributes its pod and
+// its containers; anything else in the file is podman's business.
+func TestReadK8sYamlMultiDocument(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "web.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-pod
+spec:
+  containers:
+    - name: frontend
+      image: nginx:latest
+---
+# A comment-only document, which is not a resource.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-pod
+spec:
+  containers:
+    - name: worker
+      image: alpine:3.20
+`)
+
+	resources, err := readK8sYaml(filepath.Join(dir, "web.yaml"))
+	if err != nil {
+		t.Fatalf("readK8sYaml: %v", err)
+	}
+
+	var pods, containers []string
+	for _, res := range resources {
+		name, _ := res["name"].(string)
+		switch res["type"] {
+		case "pod":
+			pods = append(pods, name)
+		case "container":
+			containers = append(containers, name)
+		}
+	}
+	if want := []string{"web-pod", "worker-pod"}; !slices.Equal(pods, want) {
+		t.Errorf("pods = %q, want %q", pods, want)
+	}
+	if want := []string{"frontend", "worker"}; !slices.Equal(containers, want) {
+		t.Errorf("containers = %q, want %q", containers, want)
+	}
+}
+
+// TestReadK8sYamlErrors covers the two failure modes that used to be silent or confusing: an
+// unreadable file (the read error was discarded) and a file with no pod in it.
+func TestReadK8sYamlErrors(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, err := readK8sYaml(filepath.Join(dir, "absent.yaml")); err == nil {
+		t.Error("expected an error for a YAML file that cannot be read")
+	}
+
+	write(t, filepath.Join(dir, "svc.yaml"), "apiVersion: v1\nkind: Service\nmetadata:\n  name: web\n")
+	_, err := readK8sYaml(filepath.Join(dir, "svc.yaml"))
+	if err == nil {
+		t.Fatal("expected an error for a YAML file with no kind: Pod document")
+	}
+	if !strings.Contains(err.Error(), "Service") {
+		t.Errorf("error should name the kinds it did find, got: %v", err)
+	}
+}
+
+// TestParseKubeWithoutYamlKey covers TODO.md section 2: a [Kube] section with no Yaml= used to
+// reach readK8sYaml("") and fail with an error about an empty path.
+func TestParseKubeWithoutYamlKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "web.kube")
+	write(t, path, "[Kube]\nPublishPort=8080:80\n")
+
+	_, err := ParseQuadletFile(path)
+	if err == nil {
+		t.Fatal("expected an error for a [Kube] section without Yaml=")
+	}
+	if !strings.Contains(err.Error(), "Yaml=") {
+		t.Errorf("error should name the missing key, got: %v", err)
+	}
+}

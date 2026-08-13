@@ -1,0 +1,19 @@
+[Unit]
+Description=Kubernetes workload, for the [Kube] option schema
+
+[Kube]
+Yaml=web.yaml
+ConfigMap=web-config.yaml
+Network=front.network
+PublishPort=8888:80
+PublishPort=8443:443
+UserNS=keep-id
+LogDriver=journald
+AutoUpdate=registry
+# Systemd-only keys: they configure the generated unit, not the podman command line.
+ExitCodePropagation=any
+SetWorkingDirectory=yaml
+KubeDownForce=true
+
+[Install]
+WantedBy=default.target

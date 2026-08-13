@@ -206,7 +206,6 @@ func LoadConfig(isRootful bool) (*Config, error) {
 // readConfigFile locates quadctl.ini, writing the shipped default if there is none, and
 // returns its key/value pairs.
 func readConfigFile(isRootful bool) (map[string]string, error) {
-
 	config := make(map[string]string)
 	var path string
 
@@ -214,7 +213,7 @@ func readConfigFile(isRootful bool) (map[string]string, error) {
 	path = os.Getenv("QUADCTL_CONFIG_DIR")
 	if info, err := os.Stat(path); err != nil || !info.IsDir() {
 		if isRootful {
-			err = fmt.Errorf("Invalid config path %s\nDefault location based on user $HOME is not read by root.\nSet $QUADCTL_CONFIG_DIR in /etc/environment to define a single location for both root and non-root.\nFor example:\n\necho \"QUADCTL_CONFIG_DIR=$HOME/.config/quadctl\" | sudo tee -a /etc/environment > /dev/null", path)
+			err = fmt.Errorf("invalid config path %s\nDefault location based on user $HOME is not read by root.\nSet $QUADCTL_CONFIG_DIR in /etc/environment to define a single location for both root and non-root.\nFor example:\n\necho \"QUADCTL_CONFIG_DIR=$HOME/.config/quadctl\" | sudo tee -a /etc/environment > /dev/null", path)
 			return nil, err
 			// Use standard $HOME/.config for normal user in absence of QUADCTL_CONFIG_DIR environment variable
 		} else {

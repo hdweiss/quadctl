@@ -256,7 +256,7 @@ two different things). All still tracked in `TODO.md`.
 
 ---
 
-## Phase 5 — Docs and release
+## Phase 5 — Docs and release — done
 
 - README usage block regenerated from the registry (Phase 2.2 makes this mechanical), config
   keys documented, the truncated "Replace  with explicit values" comment fixed.
@@ -266,6 +266,13 @@ two different things). All still tracked in `TODO.md`.
 *Overlap note:* the release half of this is largely subsumed by 6.4 — GoReleaser does the
 `-ldflags -X` stamping and the cross-compile matrix in one config. Do 6.4 and this becomes
 docs plus a `needs:` edge from the test job.
+
+*That is how it went.* The release half landed as 6.4/6.5 and the `needs:` edge turned out
+to be a `uses:` edge — `build_release.yml` calls `go.yml` rather than restating it. The docs
+half landed here: the README usage block is the binary's own output, plus a flag-by-command
+table and all fourteen config keys with their defaults. One thing the plan didn't foresee:
+regenerating the usage block also caught a stale *install* command, since GoReleaser
+publishes `.tar.gz` where the hand-rolled workflow published bare `.tar`.
 
 ---
 
@@ -312,36 +319,75 @@ splitting `systemd` out needed only `Label` and `TableStyle` exported from `comm
 **6.2 — Package doc comments (S). — done.** One per package, in the file that carries the
 package's main type. Nine of them, counting `main`.
 
-**6.3 — `golangci-lint`, pinned as a tool dependency (S). Independent.** `go vet` is the
+**6.3 — `golangci-lint`, pinned as a tool dependency (S). Independent. — done.** `go vet` is the
 floor and it is now in CI; a meta-linter is the ceiling. `unused` alone would have found the
 dead code §5 still tracks by hand. Pin it with `go get -tool` rather than installing it ad
 hoc, so CI and local runs agree — Go 1.24 added the `go.mod` `tool` directive for exactly
 this and it retires the old `tools.go` blank-import trick. Config in `.golangci.yml`.
 
-**6.4 — GoReleaser (S). Independent.** `build_release.yml` hand-rolls three cross-compiles
+*What landed:* the standard set (`errcheck`, `govet`, `ineffassign`, `staticcheck`,
+`unused`) plus `errorlint`, `misspell`, `nilerr`, `unconvert`, `usestdlibvars`,
+`wastedassign` and `whitespace`. `go tool golangci-lint run` reports 0 issues and CI runs it.
+
+*Two things the plan didn't anticipate.* First, `golangci-lint`'s defaults cap each linter
+at three findings and hide the rest, so a run that reports nothing new is not the same as a
+clean tree — `max-issues-per-linter` and `max-same-issues` are 0 here for that reason.
+Second, `go get -tool` of a program this large moves the whole module graph: it pulled
+`golang.org/x/ansi` forward past the pinned `charmbracelet/x/cellbuf`, which broke the build
+until lipgloss and cellbuf were upgraded to match. Adding a tool dependency is a dependency
+change, not a config change — build and test after one, and run `go mod tidy`, because the
+new tool's graph can leave `go.sum` incomplete for an *older* tool's build.
+
+**6.4 — GoReleaser (S). Independent. — done.** `build_release.yml` hand-rolls three cross-compiles
 and three `tar` invocations, and still carries the workflow template's `# Replace this with
 your actual build command`. A `.goreleaser.yaml` replaces the whole block and adds checksums
 and a changelog, neither of which exist today. It also does Phase 5's `-ldflags -X` version
 stamping, so treat the two as one task. Pin it via the same `tool` directive as 6.3.
 
-**6.5 — CI details (S). Independent.**
+*What landed:* `.goreleaser.yaml` builds linux amd64/arm64/armv6 with `-trimpath` and
+`CGO_ENABLED=0`, stamps `main.version`/`commit`/`date`, and publishes `.tar.gz` archives,
+`checksums.txt` and a grouped changelog. `--version` is a flag in `main`, not a subcommand
+and not a field of `quadlet.State`: it is answered during the global flag parse and returns
+the same "stop, successfully" sentinel `-h` does. An unstamped build falls back to
+`debug.ReadBuildInfo`, so `go install` and `go build` also answer it with something specific.
+
+*Two choices worth recording.* The archive names are deliberately the old workflow's
+(`quadctl_linux_amd64`, `_arm64`, `_armhf`) rather than GoReleaser's versioned default —
+the README's install command and anyone else's download script pin those. And `--version`
+is registered only on the global flag set, not on every subcommand the way `-s` is, so
+`quadctl start --version` is the usage error it looks like rather than a flag nothing reads.
+
+**6.5 — CI details (S). Independent. — done.**
 - `go test` runs without `-race`.
 - Both workflows use `actions/setup-go@v4`; v5+ is current.
 - `go.yml` pins `'1.26.3'`, `build_release.yml` pins `'1.26'`. Pick one.
 - `go mod tidy` is still pending (§6) — `tidy` moves 10 lines today.
 
-**6.6 — A task runner, once there is something to wrap (S). Last.** There is deliberately
+*What landed:* `-race`, `setup-go@v5` with module caching, and `go-version-file: go.mod` in
+both workflows — the answer to "pick one" is to not pin it in a workflow at all, since the
+version already has a home the compiler reads. `go.yml` triggers on every branch and every
+PR, and gained a lint step. `build_release.yml` no longer duplicates any of that: it
+`uses:` `go.yml` as a reusable workflow and the release job `needs:` it, so a tag that
+doesn't build, vet, lint and test doesn't publish, and the gate can't drift from CI.
+
+**6.6 — A task runner, once there is something to wrap (S). Last. — done.** There is deliberately
 nothing here yet: `go build ./...`, `go test ./...` and `go vet ./...` are the build system,
 and a Makefile that only wraps them is noise. After 6.3–6.5 there are real targets (lint,
 cover, cross-build, release dry-run) and one earns its place. Make is the safe default;
 Task (`Taskfile.yml`) if cross-platform matters.
 
+*What landed:* a `Makefile`, on the Make-is-the-safe-default reading — quadctl builds for
+Linux only, so cross-platform was never the constraint. The targets are the ones that carry
+arguments worth not retyping: `build` (stamped from `git describe`, so a local binary's
+`--version` is as specific as a released one's), `check` (what CI runs, in CI's order),
+`cover`, `golden` (regenerate the golden file), `snapshot`, `release-check`, `clean`. `make`
+with no target lists them. `build.sh` is gone — `make build` is what it was, plus stamping.
+
 **Not doing:** `pkg/`, and `cmd/quadctl/` for a single binary. Neither appears in the
 official layout guidance for a repo this shape.
 
 **Done when:** no package is named for its role in the build rather than its subject, and
-`golangci-lint` + tests + vet all gate a release that GoReleaser cuts. *Half met: the package
-names are settled and documented; the tooling half is 6.3–6.5.*
+`golangci-lint` + tests + vet all gate a release that GoReleaser cuts. *Met.*
 
 ---
 
@@ -354,10 +400,9 @@ Phase 2  moves         ──▶ split files → registry → housekeeping      
 Phase 2.5 internal/    ──▶ pure rename                                    done
 Phase 3  rewrites      ──▶ value model → state split                      done
 Phase 4  consistency   ──▶ naming → matching → config → output → paths    done
-Phase 5  docs/release                                                      skipped for now
+Phase 5  docs/release                                                      subsumed by 6.4
 Phase 6  go idiom      ──▶ util split → package docs                        done
-                          ──▶ lint → release → tasks                        next
-                          (6.3–6.5 are independent; they can land any time)
+                          ──▶ lint → release → tasks                        done
 ```
 
 **Don't reorder these:** 1.1 before 1.4 (no tests without a fake runner), 1.3 before golden

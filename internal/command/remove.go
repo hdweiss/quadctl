@@ -5,7 +5,6 @@ import (
 )
 
 func HandleRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
-
 	commands := []Command{}
 
 	// Reverse order for safe removal
@@ -26,8 +25,19 @@ func HandleRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Comman
 		case ".pod":
 			rmCmd = append(rmCmd, "pod", "rm", "-f", resName)
 		case ".network":
+			// remove_networks/remove_volumes are what the user asked to keep. The systemd path
+			// has always honored them; this one used to destroy the data anyway (TODO.md
+			// section 2).
+			if !quadctl.Config.IsRemoveNetworks {
+				commands = append(commands, keptResource(q, "remove_networks=false"))
+				continue
+			}
 			rmCmd = append(rmCmd, "network", "rm", resName)
 		case ".volume":
+			if !quadctl.Config.IsRemoveVolumes {
+				commands = append(commands, keptResource(q, "remove_volumes=false"))
+				continue
+			}
 			rmCmd = append(rmCmd, "volume", "rm", resName)
 		}
 
@@ -36,4 +46,13 @@ func HandleRemove(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Comman
 		commands = append(commands, c)
 	}
 	return commands, nil
+}
+
+// keptResource is the no-op command that stands in for a removal the configuration asked
+// quadctl not to perform. It carries no argv, so it runs nothing and reports what it skipped
+// and why - silence here reads as "removed" to anyone watching the output.
+func keptResource(q *quadlet.Quadlet, reason string) Command {
+	c := NewCommand(quadletLabel("Keeping", q))
+	c.Output = []string{"not removed: " + reason + " in quadctl.ini"}
+	return c
 }

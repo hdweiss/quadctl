@@ -56,41 +56,75 @@ See also [Blog](https://dev.to/itinkerthere4ican/quadlets-without-the-friction-3
 The below command line downloads the latest release and attempts to install to /usr/local/bin. Alternatively, go to the latest release page and manually download the tar file and extract to your preferred $PATH location for the binary. 
 
 ```
-curl -sL github.com/fkmiec/quadctl/releases/latest/download/quadctl_linux_amd64.tar | sudo tar xv -C /usr/local/bin
+curl -sL github.com/fkmiec/quadctl/releases/latest/download/quadctl_linux_amd64.tar.gz | sudo tar xzv -C /usr/local/bin quadctl
 ```
 
-On first invocation, quadctl will install a default quadctl.ini config file to ~/.config/quadctl. It is recommended that you review and update the location configurations to match your desired workflow: 
+Replace `amd64` with `arm64` or `armhf` as needed. Each release also publishes `checksums.txt`. Releases up to and including v0.9.12 shipped uncompressed `.tar` archives instead — drop the `.gz` and the `z` for those.
 
-* quadlet.src.path - A directory location where subdirectories represent quadlet applications. Default is ~/.local/quadlets.
-* quadlet.user.path - The systemd quadlet generator directory to use for rootless quadlets.
-* quadlet.root.path - The systemd quadlet generator directory to use for rootful quadlets.
+On first invocation, quadctl will install a default quadctl.ini config file to ~/.config/quadctl. It is recommended that you review and update the location configurations to match your desired workflow. The file itself is commented; the table below is the full set of keys.
+
+**Paths**
+
+| Key | Default | What it does |
+|---|---|---|
+| `quadlet.src.path` | `$HOME/.local/quadlets` | Directory whose subdirectories are quadlet applications. This is what `quadctl start homebox` resolves against from anywhere, and what `-a` widens to. |
+| `quadlet.user.path` | `$HOME/.config/containers/systemd` | Systemd quadlet generator directory used for rootless quadlets (`-s`). |
+| `quadlet.root.path` | `/etc/containers/systemd` | Systemd quadlet generator directory used for rootful quadlets (`sudo … -s`). |
+
+quadctl does **not** expand environment variables in these values — write out `$HOME`, `$XDG_CONFIG_HOME`, `$XDG_RUNTIME_DIR` and `${UID}` as explicit values.
+
+**Behaviour**
+
+Booleans take `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`, in any case. A value quadctl can't read, and a key it doesn't know, are both reported on stderr rather than ignored — a misspelled setting otherwise looks exactly like one that doesn't work.
+
+| Key | Default | What it does |
+|---|---|---|
+| `systemd.enabled` | `false` | Make systemd mode the default, as though `-s` had been given on every command. `--no-systemd` overrides it for a single command. |
+| `use_subdirectories` | `true` | Install each application into its own subdirectory of the generator directory rather than into the root of it. |
+| `use_symbolic_links` | `false` | Symlink quadlet files into the generator directory instead of copying them. |
+| `auto_reload_systemd` | `true` | Run `systemctl daemon-reload` after installing or removing quadlets. |
+| `remove_volumes` | `true` | Let `remove` delete volumes. With `false`, `quadctl rm` prints a `Keeping …` line for each volume instead of destroying the data. |
+| `remove_networks` | `true` | The same, for networks. |
+
+**Systemd command templates**
+
+The commands `-s` runs are configurable, so an unusual init setup doesn't require a fork. `{{.user}}` expands to `--user` when rootless and to nothing when rootful.
+
+| Key | Default |
+|---|---|
+| `systemd.reload` | `systemctl {{.user}} daemon-reload` |
+| `systemd.start` | `systemctl {{.user}} start` |
+| `systemd.stop` | `systemctl {{.user}} stop` |
+| `systemd.status` | `systemctl {{.user}} status` |
+| `systemd.logs` | `journalctl {{.user}} -xe` |
 
 ## Usage
 
 ```
 Orchestrator for Podman Quadlets (with and without systemd)
-Usage: quadctl [flags] <command> [path]
+Usage: quadctl [flags] <command> [flags] [path]
 
 Flags:
-  -s	Use systemd for managing services (default: false)
-  -systemd
-    	Use systemd for managing services (default: false)
+  -s, --systemd      Manage services through systemd rather than podman directly (default: false)
+      --no-systemd   Manage services with podman directly, overriding systemd.enabled in quadctl.ini (default: false)
+      --no-color     Disable ANSI colour, as NO_COLOR in the environment does (default: false)
+      --version      Print the version and exit (default: false)
 
 Commands:
-  pull       : Pull required images
-  create     : Create resources (do not start). Use -s flag to generate quadlets under systemd.
-  start      : Create (if missing) and start resources. Use -s flag to start under systemd.
-  run        : Run a single .container in the foreground. Not supported for systemd. See quadctl run --help.
-  stop       : Stop running services (do not remove). Use -s flag to stop under systemd.
-  remove, rm : Remove stopped resources. Use -s flag to remove generated quadlets under systemd.
-  logs       : Show logs of running containers. Use -s flag to view systemd logs.
-  list, ls   : List quadlets in the configured quadlet_path or systemd path if -s flag is used.
+  pull      : Pull required images
+  create    : Create resources (do not start). Use -s to generate quadlets under systemd.
+  start     : Create (if missing) and start resources. Use -s to start under systemd.
+  run       : Run a single .container in the foreground. Not supported under systemd.
+  stop      : Stop running services (do not remove). Use -s to stop under systemd.
+  remove|rm : Remove stopped resources. Use -s to remove generated quadlets under systemd.
+  logs      : Show logs of running containers. Use -s to view systemd logs.
+  list|ls   : List quadlets in the configured quadlet path, or the systemd path with -s.
 
 Wrapper commands (filtered to defined resources):
   images : Show images defined for the set of related quadlets.
   ps     : Show state of containers.
   stats  : Show live stats for containers.
-  status : Show current status. Use -s flag to see systemd status.
+  status : Show current status. Use -s to see systemd status.
 
 Requirements:
   A quadctl.ini config file is required. Default location is $HOME/.config/quadctl.
@@ -98,7 +132,29 @@ Requirements:
   Set QUADCTL_CONFIG_DIR=<absolute path to config directory> in /etc/environment to
     change config location and/or ensure found when using sudo.
 
+Run 'quadctl <command> -h' for the flags and notes of a single command.
 ```
+
+The three global flags above are accepted both before and after the subcommand — `quadctl -s start` and `quadctl start -s` are the same command. `--version` is the exception: it answers and exits, so it takes no subcommand.
+
+### Flags by command
+
+`quadctl <command> -h` prints this per command, along with notes specific to it.
+
+| | pull | create | start | run | stop | remove | logs | list | images | ps | stats | status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `-f, --file` — treat the path as a single quadlet file | ● | ● | ● | ● | ● | ● | | | ● | ● | ● | ● |
+| `-p, --print` — print the commands instead of running them | ● | ● | ● | ● | ● | ● | ● | | | ● | ● | ● |
+| `-v, --verbose` — commentary on how each command was built | | ● | ● | ● | ● | ● | | | | | | |
+| `-a, --all` — every quadlet under `quadlet.src.path` | ● | | | | | | | ✱ | ● | ● | ● | ● |
+| `-l, --long` — long `systemctl status` output | | | | | | | | | | | | ● |
+| `-d, --depth` — depth of the directory listing | | | | | | | | ● | | | | |
+| `--pargs` — extra arguments for podman | | | | ● | | | | | | | | |
+| `--exec` — command to run in the container | | | | ● | | | | | | | | |
+
+✱ `list -a` means something different: all three *configured paths* (src, systemd user, systemd root), not all quadlets under `quadlet.src.path`.
+
+`-p/--print` is worth knowing about. It builds everything and prints the exact commands, shell-quoted, without running any of them — including the systemd install and removal steps — so it is the safe way to find out what `quadctl -s rm` is about to do.
 
 ## Resource naming
 

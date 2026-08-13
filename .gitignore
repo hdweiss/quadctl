@@ -9,3 +9,6 @@
 /quadctl
 /validator
 .zed
+
+# GoReleaser's output directory.
+/dist

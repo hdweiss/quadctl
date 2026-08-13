@@ -42,6 +42,14 @@ type Command struct {
 	// ShowSpinner is set by RunCommands from the run state: a spinner redraws its own line,
 	// which only means anything on a terminal.
 	ShowSpinner bool
+	// Stream marks a command whose output the user watches as it happens - podman logs,
+	// podman stats, journalctl. It writes straight through to quadctl's own stdout and stderr
+	// instead of being captured, and no spinner runs over it.
+	//
+	// It exists so that these commands can go through RunCommands like everything else. They
+	// used to shell out from inside their handler, which is why they alone had no label, no
+	// error reporting and no effect on the exit code (TODO.md section 3).
+	Stream bool
 }
 
 func (c *Command) PreCmd() {
@@ -79,6 +87,12 @@ func DefaultPreFn(c *Command) {
 	if isForegroundRun(c.Cmd) {
 		return // Skip spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
 	}
+	if c.Stream {
+		// The command is about to write to this terminal itself, so say what it is first and
+		// then get out of its way.
+		fmt.Printf("%s...\n", c.Label)
+		return
+	}
 	if !c.ShowSpinner {
 		return
 	}
@@ -89,6 +103,10 @@ func DefaultPreFn(c *Command) {
 }
 
 func DefaultRunFn(c *Command) {
+	if c.Stream {
+		_, c.Error = c.Runner.Run(c.Cmd, runner.Options{Mode: runner.Stream})
+		return
+	}
 	if len(c.Cmd) > 0 {
 		// c.Cmd is argv already: ParseFields resolved quoting where the value was written,
 		// so each entry is exactly the bytes the program should see. Nothing is stripped
@@ -107,6 +125,10 @@ func DefaultRunFn(c *Command) {
 func DefaultPostFn(c *Command) {
 	if isForegroundRun(c.Cmd) {
 		return // Skip stopping the spinner for 'run' command since it is interactive and the spinner output can interfere with the container's output.
+	}
+	if c.Stream {
+		// Its own output is the outcome, and a failure is reported by RunCommands.
+		return
 	}
 	outcome := "Done"
 	if c.Error != nil {
@@ -210,7 +232,6 @@ func printWarnings(quadctl *quadlet.State, commands []Command) {
 // generate commands. Returns the exit code quadctl should terminate with: 0 when every
 // command succeeded, otherwise the status of the last command that failed.
 func RunCommands(quadctl *quadlet.State, commands []Command) int {
-
 	exitCode := 0
 
 	printWarnings(quadctl, commands)

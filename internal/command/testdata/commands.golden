@@ -28,3 +28,10 @@ create podman container create --name systemd-shell --cap-add NET_ADMIN --cap-ad
 start  podman container start systemd-shell
 stop   podman stop systemd-shell
 
+## web.kube
+create -
+start  podman play kube --annotation io.containers.autoupdate=registry --configmap testdata/stack/web-config.yaml --log-driver journald --network front --publish 8888:80 --publish 8443:443 --userns keep-id testdata/stack/web.yaml
+stop   podman play kube --down --force testdata/stack/web.yaml
+warn   [INFO] ignoring [Install] section (systemd only)
+warn   [INFO] ignoring [Unit] section (systemd only)
+

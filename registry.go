@@ -132,11 +132,26 @@ var (
 		Usage:    "Command to execute in the container (e.g. --exec='/bin/bash')",
 		register: stringFlag(func(q *quadlet.State) *string { return &q.RunCmd }),
 	}
+	// flagVersion targets a variable in main rather than a field of the run state: which
+	// binary this is isn't part of what a run does. It has no short form because -v is
+	// already --verbose on nine subcommands.
+	flagVersion = flagSpec{
+		Name: "version", Default: "false",
+		Usage: "Print the version and exit",
+		register: func(fs *flag.FlagSet, _ *quadlet.State, name, usage string) {
+			fs.BoolVar(&showVersion, name, false, usage)
+		},
+	}
 )
 
 // globalFlags are accepted before the subcommand and are also registered on every
 // subcommand's flag set, so 'quadctl -s start' and 'quadctl start -s' both work.
 var globalFlags = []flagSpec{flagSystemd, flagNoSystemd, flagNoColor}
+
+// preCommandFlags are answered before a subcommand is resolved and are deliberately not
+// registered on the subcommands: 'quadctl --version' is a whole invocation, not a modifier
+// on one, and 'quadctl start --version' should be the usage error it looks like.
+var preCommandFlags = []flagSpec{flagVersion}
 
 // --- SUBCOMMAND TABLE ---
 
@@ -319,14 +334,12 @@ func commands() []*subcommand {
 			},
 		},
 		{
-			Name:     "ps",
-			Wrapper:  true,
-			Summary:  "Show state of containers.",
-			Synopsis: "Display state of containers defined in quadlet files.",
-			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-				return nil, command.HandlePS(quadctl, quadlets)
-			},
+			Name:            "ps",
+			Wrapper:         true,
+			Summary:         "Show state of containers.",
+			Synopsis:        "Display state of containers defined in quadlet files.",
+			Flags:           []flagSpec{flagFile, flagPrint, flagAll},
+			Run:             command.HandlePS,
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
 			Notes: []string{
@@ -337,14 +350,12 @@ func commands() []*subcommand {
 			},
 		},
 		{
-			Name:     "stats",
-			Wrapper:  true,
-			Summary:  "Show live stats for containers.",
-			Synopsis: "Display live stats of running containers defined in quadlet files.",
-			Flags:    []flagSpec{flagFile, flagAll},
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-				return nil, command.HandleStats(quadctl, quadlets)
-			},
+			Name:            "stats",
+			Wrapper:         true,
+			Summary:         "Show live stats for containers.",
+			Synopsis:        "Display live stats of running containers defined in quadlet files.",
+			Flags:           []flagSpec{flagFile, flagPrint, flagAll},
+			Run:             command.HandleStats,
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
 			Notes: []string{
@@ -360,9 +371,7 @@ func commands() []*subcommand {
 			Synopsis: "Display status for resources (pod, container, volume, network) defined in quadlet files.",
 			Flags:    []flagSpec{flagLong, flagFile, flagPrint, flagAll},
 			// Without -s, status is ps.
-			Run: func(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-				return nil, command.HandlePS(quadctl, quadlets)
-			},
+			Run:             statusWithoutSystemd,
 			RunSystemd:      systemd.HandleStatus,
 			WidensWhenEmpty: true,
 			WidensOnAll:     true,
@@ -374,6 +383,16 @@ func commands() []*subcommand {
 			},
 		},
 	}
+}
+
+// statusWithoutSystemd is what 'status' does with no -s: the same listing 'ps' gives. It
+// notes the flags that only mean something on the systemd side rather than accepting them
+// and quietly doing nothing with them (TODO.md section 3).
+func statusWithoutSystemd(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
+	if quadctl.IsLongStatus {
+		fmt.Fprintf(os.Stderr, "Note: -l/--long applies to 'systemctl status' output and is ignored without -s.\n")
+	}
+	return command.HandlePS(quadctl, quadlets)
 }
 
 // refuseSystemd builds a RunSystemd that reports the subcommand as unsupported under
@@ -402,7 +421,7 @@ func newRegistry(quadctl *quadlet.State) *registry {
 
 	r.global = flag.NewFlagSet(toolName, flag.ContinueOnError)
 	r.global.Usage = r.printUsage
-	registerFlags(r.global, quadctl, globalFlags)
+	registerFlags(r.global, quadctl, append(append([]flagSpec{}, globalFlags...), preCommandFlags...))
 
 	for _, c := range r.commands {
 		c.flagSet = flag.NewFlagSet(c.Name, flag.ContinueOnError)
@@ -433,6 +452,11 @@ func registerFlags(fs *flag.FlagSet, quadctl *quadlet.State, flags []flagSpec) {
 func (r *registry) parseGlobalFlags(argv []string) error {
 	if err := r.global.Parse(argv); err != nil {
 		return usageError(err)
+	}
+	// --version answers itself and stops, like -h: there is no subcommand to go looking for.
+	if showVersion {
+		printVersion(os.Stdout)
+		return errHelp
 	}
 	r.args = r.global.Args()
 	if len(r.args) < 1 {
@@ -502,7 +526,7 @@ func (r *registry) printUsage() {
 	fmt.Fprintf(w, "Orchestrator for Podman Quadlets (with and without systemd)\n")
 	fmt.Fprintf(w, "Usage: %s [flags] <command> [flags] [path]\n\n", toolName)
 	fmt.Fprintf(w, "Flags:\n")
-	printFlags(w, globalFlags)
+	printFlags(w, append(append([]flagSpec{}, globalFlags...), preCommandFlags...))
 
 	fmt.Fprintf(w, "\nCommands:\n")
 	printCommandList(w, r.commands, false)

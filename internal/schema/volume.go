@@ -200,16 +200,3 @@ func optContainersConfModuleVolume() SchemaOption {
 		Values:          []OptionValue{},
 	}
 }
-
-// getVolumeSchema generates the complete volume schema
-func GetVolumeSchema() Schema {
-	options := GetVolumeOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Volume",
-			Options: options,
-		},
-	}
-}

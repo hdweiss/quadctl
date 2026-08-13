@@ -5,7 +5,6 @@ import (
 )
 
 func HandleStop(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]Command, error) {
-
 	commands := []Command{}
 
 	// Reverse order for safe stopping

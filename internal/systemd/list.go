@@ -8,19 +8,25 @@ import (
 	"github.com/fkmiec/quadctl/internal/runner"
 )
 
+// fieldSep separates the columns asked of `podman quadlet list --format`. A comma was the
+// obvious choice and the wrong one: one of the columns is a filesystem path, and a directory
+// with a comma in its name split a row into five fields that were then discarded (TODO.md
+// section 2). A tab cannot appear in a unit name and does not appear in a path anyone has.
+const fieldSep = "\t"
+
 func listSystemdInstalledQuadlets(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([][]string, error) {
-	cmd := []string{"podman", "quadlet", "list", "--format", "{{.Name}},{{.Path}},{{.UnitName}},{{.Status}}"}
+	format := strings.Join([]string{"{{.Name}}", "{{.Path}}", "{{.UnitName}}", "{{.Status}}"}, fieldSep)
+	cmd := []string{"podman", "quadlet", "list", "--format", format}
 	output, err := runner.RunCaptured(quadctl.Runner, cmd)
 	if err != nil {
 		// Older podman releases don't have the `quadlet list` subcommand. Fall back to
 		// querying each unit's state via systemctl instead of failing outright.
 		return listInstalledQuadletsViaSystemctl(quadctl, quadlets)
 	}
-	//.Printf("podman quadlet list:\n%s\n", output)
 	lines := strings.Split(output, "\n")
 	var info [][]string
 	for _, line := range lines {
-		parts := strings.Split(line, ",")
+		parts := strings.Split(line, fieldSep)
 		if len(parts) < 4 {
 			continue
 		}
@@ -71,7 +77,13 @@ func listInstalledQuadletsViaSystemctl(quadctl *quadlet.State, quadlets []*quadl
 		if status == "" {
 			status = "unknown"
 		}
-		info = append(info, []string{filepath.Base(q.Filepath), q.Filepath, q.ServiceName, status})
+		// ".service", as podman's own UNIT NAME column has it: the two code paths fill the
+		// same table and used to disagree about this column (TODO.md section 2).
+		unitName := q.ServiceName
+		if !strings.HasSuffix(unitName, ".service") {
+			unitName += ".service"
+		}
+		info = append(info, []string{filepath.Base(q.Filepath), q.Filepath, unitName, status})
 	}
 	return info, nil
 }

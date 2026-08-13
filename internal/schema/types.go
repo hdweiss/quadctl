@@ -30,25 +30,3 @@ type SchemaOption struct {
 	QuadletTemplateParsed *template.Template `json:"-"`
 	PodmanTemplateParsed  *template.Template `json:"-"`
 }
-
-// SchemaType represents the schema for a unit type
-type SchemaType struct {
-	Type    string         `json:"type"`
-	Options []SchemaOption `json:"options"`
-}
-
-// Schema represents the complete schema
-type Schema []SchemaType
-
-// OptionMetadata holds extracted metadata for an option
-type OptionMetadata struct {
-	QuadletKey     string
-	QuadletFormat  string // Format string with placeholders
-	PodmanKey      string
-	PodmanFormat   string // Format string with placeholders
-	Description    string
-	AllowMultiple  bool
-	KnownValues    []OptionValue
-	ValidatorRegex string
-	ValueType      string // e.g., "ipv4", "integer", "duration", "path", "capability"
-}

@@ -1,31 +1,45 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
+# Build, vet, lint and test. Also the gate on a release: build_release.yml calls this
+# workflow rather than repeating it, which is why workflow_call is here (PLAN.md 6.5).
 name: Go
 
 on:
+  # Every branch, not just main. A branch whose tests only run once it is opened as a PR
+  # against main is a branch whose tests run too late.
   push:
-    branches: [ "main" ]
+    tags-ignore:
+      - 'v*' # build_release.yml runs this workflow for tags; once is enough.
   pull_request:
-    branches: [ "main" ]
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.26.3'
+      # go.mod is the single place the Go version is pinned - the two workflows used to pin
+      # '1.26.3' and '1.26' independently, which is two answers to one question.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
-    - name: Build
-      run: go build -v ./...
+      - name: Build
+        run: go build -v ./...
 
-    - name: Vet
-      run: go vet ./...
+      - name: Vet
+        run: go vet ./...
 
-    - name: Test
-      run: go test -v ./...
+      # golangci-lint is a go.mod tool dependency, so this is the same binary, at the same
+      # version, that `go tool golangci-lint run` uses locally.
+      - name: Lint
+        run: go tool golangci-lint run
+
+      # -race, because the spinner and the interrupt handler are the only goroutines in the
+      # program and they are exactly the kind that fail once a year without it.
+      - name: Test
+        run: go test -race -v ./...

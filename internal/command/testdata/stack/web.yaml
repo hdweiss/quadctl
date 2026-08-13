@@ -1,0 +1,19 @@
+# Two documents, which is the shape podman kube play expects: quadctl reads the pods out of
+# it and leaves everything else alone.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+data:
+  GREETING: hello
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-pod
+spec:
+  containers:
+    - name: frontend
+      image: docker.io/library/nginx:latest
+    - name: sidecar
+      image: docker.io/library/alpine:3.20

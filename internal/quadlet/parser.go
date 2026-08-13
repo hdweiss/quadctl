@@ -33,6 +33,15 @@ var (
 		".volume":    true,
 		".kube":      true,
 	}
+
+	// unsupportedExtensions are quadlet types podman's generator understands and quadctl does
+	// not yet build commands for. They are named so that one turning up in an application
+	// directory is reported rather than passed over as though it were a README (FEATURES.md,
+	// "Broader quadlet support").
+	unsupportedExtensions = map[string]bool{
+		".image": true,
+		".build": true,
+	}
 )
 
 // Quadlet represents a parsed Quadlet file and its relationships.
@@ -186,7 +195,6 @@ func InitAllQuadlets(quadctl *State) ([]*Quadlet, error) {
 // --- PARSING AND GENERATION LOGIC ---
 
 func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Quadlet, error) {
-
 	quadlets := make(map[string]*Quadlet)
 
 	if info, err := os.Stat(searchDir); err != nil || !info.IsDir() {
@@ -210,7 +218,7 @@ func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Qua
 		//fmt.Println(f.Name(), f.IsDir())
 		path := filepath.Join(searchDir, f.Name())
 		ext := filepath.Ext(path)
-		if ".quadlets" == ext {
+		if ext == ".quadlets" {
 			//parseDotQuadlets extracts individual quadlets into separate files in a scratch directory
 			scratch, err := quadctl.newScratchDir("quadlets")
 			if err != nil {
@@ -240,7 +248,7 @@ func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Qua
 			//Skip the .quadlets files that were already extracted into the temp directory
 			path := filepath.Join(searchDir, f.Name())
 			ext := filepath.Ext(path)
-			if ".quadlets" == ext {
+			if ext == ".quadlets" {
 				continue
 			}
 			//Copy any other files over (could be .container, .volume, etc. or .env file or a README ... whatever)
@@ -265,15 +273,23 @@ func discoverAndParseQuadlets(quadctl *State, searchDir string) (map[string]*Qua
 	// If there were .quadlets files, all were extracted to a temp directory and all other files and subdirectories were copied to the temp directory
 
 	for _, f := range files {
-		//fmt.Printf("Calling parseQuadlet for: %s\n", f.Name())
 		path := filepath.Join(searchDir, f.Name())
 		ext := filepath.Ext(path)
-		if extensions[ext] {
+		switch {
+		case extensions[ext]:
 			q, err := parseQuadlet(path)
 			if err != nil {
 				return nil, fmt.Errorf("parsing %s: %w", path, err)
 			}
 			quadlets[q.ID] = q
+		case f.IsDir():
+			// Drop-in directories, and whatever else the application directory holds.
+		case unsupportedExtensions[ext]:
+			// A file quadlet itself would act on. Saying nothing here reads as "there is
+			// nothing to do for it" (TODO.md section 2).
+			fmt.Fprintf(os.Stderr, "Warning: ignoring %s - quadctl does not handle %s quadlets yet\n", f.Name(), ext)
+		case quadctl.IsVerbose:
+			fmt.Fprintf(os.Stderr, "Skipping %s - not a quadlet file\n", f.Name())
 		}
 	}
 
@@ -313,7 +329,7 @@ func parseDotQuadlets(path, destDir string) error {
 			}
 		}
 		// Save file when hit the separator
-		if "---" == strings.TrimSpace(line) {
+		if strings.TrimSpace(line) == "---" {
 			baseQuadletFilename = checkExtension(baseQuadletFilename, quadletText)
 
 			err := config.WriteFile(filepath.Join(destDir, baseQuadletFilename), quadletText)
@@ -464,15 +480,20 @@ func parseQuadlet(path string) (*Quadlet, error) {
 	}
 
 	if kubeSec, ok := q.Sections["Kube"]; ok {
-		if yamlPath := LastValue(kubeSec, "Yaml"); yamlPath != "" {
-			if !filepath.IsAbs(yamlPath) {
-				yamlPath = filepath.Join(filepath.Dir(q.Filepath), yamlPath)
-			}
-			if info, err := os.Stat(yamlPath); err != nil || info.IsDir() {
-				return nil, fmt.Errorf("Yaml= does not name a readable file: %s", yamlPath)
-			}
-			q.KubernetesYaml = yamlPath
+		yamlPath := LastValue(kubeSec, "Yaml")
+		if yamlPath == "" {
+			// Yaml= is the one required key of a .kube quadlet; without it there is no
+			// workload to play, and readK8sYaml would otherwise report an unreadable "".
+			return nil, fmt.Errorf("%s: [Kube] section without a Yaml= key", q.Filepath)
 		}
+		if !filepath.IsAbs(yamlPath) {
+			yamlPath = filepath.Join(filepath.Dir(q.Filepath), yamlPath)
+		}
+		if info, err := os.Stat(yamlPath); err != nil || info.IsDir() {
+			return nil, fmt.Errorf("[Kube] Yaml= does not name a readable file: %s", yamlPath)
+		}
+		q.KubernetesYaml = yamlPath
+
 		resources, err := readK8sYaml(q.KubernetesYaml)
 		if err != nil {
 			return nil, err
@@ -621,8 +642,22 @@ func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 		}
 	}
 
-	// Implicit dependencies [Container/Pod] Network=/Volume=/Pod=
-	if q.Type == ".container" {
+	// Implicit dependencies [Container/Pod/Kube] Network=/Volume=/Pod=.
+	// A reference resolves to the referenced quadlet's resource name whether or not that
+	// quadlet is in this directory; it is only a dependency when it is.
+	addRef := func(ref, ext string) {
+		id, ok := quadletRefID(ref, ext)
+		if !ok {
+			return
+		}
+		resolveQuadletRef(q, all, ref, ext)
+		if _, exists := all[id]; exists {
+			depSet[id] = true
+		}
+	}
+
+	switch q.Type {
+	case ".container":
 		cont := q.Sections["Container"]
 		if pod := LastValue(cont, "Pod"); pod != "" {
 			podID := strings.TrimSuffix(pod, ".pod")
@@ -631,39 +666,25 @@ func extractDependencies(q *Quadlet, all map[string]*Quadlet) {
 		}
 
 		for _, net := range cont["Network"] {
-			if id, ok := quadletRefID(net, ".network"); ok {
-				resolveQuadletRef(q, all, net, ".network")
-				if _, exists := all[id]; exists {
-					depSet[id] = true
-				}
-			}
+			addRef(net, ".network")
 		}
 
 		for _, vol := range cont["Volume"] {
 			// Vol format source.volume:/path
-			source := strings.Split(vol, ":")[0]
-			if id, ok := quadletRefID(source, ".volume"); ok {
-				resolveQuadletRef(q, all, source, ".volume")
-				if _, exists := all[id]; exists {
-					depSet[id] = true
-				}
-			}
+			addRef(strings.Split(vol, ":")[0], ".volume")
 		}
-	} else if q.Type == ".pod" {
+	case ".pod":
 		podSec := q.Sections["Pod"]
 		for _, net := range podSec["Network"] {
-			if id, ok := quadletRefID(net, ".network"); ok {
-				resolveQuadletRef(q, all, net, ".network")
-				if _, exists := all[id]; exists {
-					depSet[id] = true
-				}
-			}
+			addRef(net, ".network")
 		}
 		for _, vol := range podSec["Volume"] {
-			source := strings.Split(vol, ":")[0]
-			if _, ok := quadletRefID(source, ".volume"); ok {
-				resolveQuadletRef(q, all, source, ".volume")
-			}
+			addRef(strings.Split(vol, ":")[0], ".volume")
+		}
+	case ".kube":
+		// [Kube] takes a Network= naming a .network quadlet the same way the other types do.
+		for _, net := range q.Sections["Kube"]["Network"] {
+			addRef(net, ".network")
 		}
 	}
 
@@ -764,51 +785,100 @@ func readYamlFile(path string) (string, error) {
 	return string(content), nil
 }
 
-// Very basic extraction by scanning for "image:" key in Kubernetes YAML
+// readK8sYaml reads the Kubernetes YAML a .kube quadlet points at and returns the pods and
+// containers described in it - what quadctl needs to know to pull images and to recognize the
+// containers podman creates from it.
+//
+// A file may hold several documents, which is the norm for 'podman kube play': every
+// "kind: Pod" in it contributes, and any other kind (ConfigMap, Service, PVC) is podman's
+// business rather than quadctl's and is passed over.
 func readK8sYaml(yamlPath string) ([]map[string]interface{}, error) {
+	yml, err := readYamlFile(yamlPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading Kubernetes YAML %s: %w", yamlPath, err)
+	}
+
+	kindPath, err := yaml.PathString("$.kind")
+	if err != nil {
+		return nil, fmt.Errorf("creating YAML path: %w", err)
+	}
+	metadataPath, err := yaml.PathString("$.metadata")
+	if err != nil {
+		return nil, fmt.Errorf("creating YAML path: %w", err)
+	}
+	containersPath, err := yaml.PathString("$.spec.containers[*]")
+	if err != nil {
+		return nil, fmt.Errorf("creating YAML path: %w", err)
+	}
 
 	var resources []map[string]interface{}
+	var kinds []string
+	for _, doc := range splitYamlDocuments(yml) {
+		var kind string
+		if err := kindPath.Read(strings.NewReader(doc), &kind); err != nil {
+			// No kind: at the top level - not a resource quadctl can say anything about.
+			continue
+		}
+		kinds = append(kinds, kind)
+		if kind != "Pod" {
+			continue
+		}
 
-	yml, _ := readYamlFile(yamlPath)
+		var pod map[string]interface{}
+		if err := metadataPath.Read(strings.NewReader(doc), &pod); err != nil {
+			return nil, fmt.Errorf("reading metadata from %s: %w", yamlPath, err)
+		}
+		pod["type"] = "pod"
+		//pod["name"] comes as part of $.metadata
+		resources = append(resources, pod)
 
-	var kind string
-	var pod map[string]interface{}
-	path, err := yaml.PathString("$.kind")
-	if err != nil {
-		return nil, fmt.Errorf("creating YAML path: %w", err)
+		var containers []map[string]interface{}
+		if err := containersPath.Read(strings.NewReader(doc), &containers); err != nil {
+			return nil, fmt.Errorf("reading containers from %s: %w", yamlPath, err)
+		}
+		for i := range containers {
+			containers[i]["type"] = "container"
+			containers[i]["pod"] = pod["name"]
+		}
+		resources = append(resources, containers...)
 	}
-	if err := path.Read(strings.NewReader(yml), &kind); err != nil {
-		return nil, fmt.Errorf("reading kind from %s: %w", yamlPath, err)
-	}
-	if kind != "Pod" {
-		return nil, fmt.Errorf("%s: unsupported Kubernetes resource kind: %s", yamlPath, kind)
-	}
-	path, err = yaml.PathString("$.metadata")
-	if err != nil {
-		return nil, fmt.Errorf("creating YAML path: %w", err)
-	}
-	if err := path.Read(strings.NewReader(yml), &pod); err != nil {
-		return nil, fmt.Errorf("reading metadata from %s: %w", yamlPath, err)
-	}
-	pod["type"] = "pod"
-	//pod["name"] comes as part of $.metadata
-	resources = append(resources, pod)
 
-	var containers []map[string]interface{}
-	path, err = yaml.PathString("$.spec.containers[*]")
-	if err != nil {
-		return nil, fmt.Errorf("creating YAML path: %w", err)
+	if len(resources) == 0 {
+		if len(kinds) == 0 {
+			return nil, fmt.Errorf("%s: no Kubernetes resource found", yamlPath)
+		}
+		return nil, fmt.Errorf("%s: no 'kind: Pod' document found (kinds present: %s)", yamlPath, strings.Join(kinds, ", "))
 	}
-	if err := path.Read(strings.NewReader(yml), &containers); err != nil {
-		return nil, fmt.Errorf("reading containers from %s: %w", yamlPath, err)
-	}
-	for i := range containers {
-		containers[i]["type"] = "container"
-		containers[i]["pod"] = pod["name"]
-	}
-	resources = append(resources, containers...)
-
-	//fmt.Printf("K8s:\n%v\n", resources)
-
 	return resources, nil
+}
+
+// splitYamlDocuments cuts a YAML stream into its documents on the "---" separator lines,
+// dropping any that hold nothing but blanks and comments.
+func splitYamlDocuments(yml string) []string {
+	var docs []string
+	var current strings.Builder
+
+	flush := func() {
+		doc := current.String()
+		current.Reset()
+		for _, line := range strings.Split(doc, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				docs = append(docs, doc)
+				return
+			}
+		}
+	}
+
+	for _, line := range strings.Split(yml, "\n") {
+		if strings.TrimSpace(line) == "---" {
+			flush()
+			continue
+		}
+		current.WriteString(line)
+		current.WriteString("\n")
+	}
+	flush()
+
+	return docs
 }

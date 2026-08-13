@@ -398,16 +398,3 @@ func optContainersConfModulePod() SchemaOption {
 		Values:          []OptionValue{},
 	}
 }
-
-// optPodSchema generates the complete pod schema
-func optPodSchema() Schema {
-	options := GetPodOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Pod",
-			Options: options,
-		},
-	}
-}

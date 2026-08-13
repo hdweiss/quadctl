@@ -186,30 +186,6 @@ func optDecryptionKey() SchemaOption {
 	}
 }
 
-func optImageRetry() SchemaOption {
-	return SchemaOption{
-		QuadletKey:      "Retry",
-		PodmanKey:       "--retry",
-		Description:     "Number of times to retry pulling image in case of failure. Default: 3.",
-		QuadletTemplate: "{{.Key}}={{.Value}}",
-		PodmanTemplate:  "{{.Key}}={{.Value}}",
-		AllowMultiple:   false,
-		Values:          []OptionValue{},
-	}
-}
-
-func optImageRetryDelay() SchemaOption {
-	return SchemaOption{
-		QuadletKey:      "RetryDelay",
-		PodmanKey:       "--retry-delay",
-		Description:     "Duration of delay between retry attempts. Default: 2s with exponential backoff unless explicitly set.",
-		QuadletTemplate: "{{.Key}}={{.Value}}",
-		PodmanTemplate:  "{{.Key}}={{.Value}}",
-		AllowMultiple:   false,
-		Values:          []OptionValue{},
-	}
-}
-
 func optTLSVerify() SchemaOption {
 	return SchemaOption{
 		QuadletKey:      "TLSVerify",
@@ -258,18 +234,5 @@ func optContainersConfModuleImage() SchemaOption {
 		PodmanTemplate:  "{{.Key}} {{.Value}}",
 		AllowMultiple:   true,
 		Values:          []OptionValue{},
-	}
-}
-
-// optImageSchema generates the complete image schema
-func GetImageSchema() Schema {
-	options := GetImageOptions()
-	PopulateValidators(options)
-
-	return Schema{
-		{
-			Type:    "Image",
-			Options: options,
-		},
 	}
 }

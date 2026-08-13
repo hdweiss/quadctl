@@ -1,0 +1,92 @@
+# GoReleaser configuration (PLAN.md 6.4).
+#
+# The binary is pinned as a go.mod tool dependency, so CI and local runs agree:
+#   go tool goreleaser release --clean      # tagged release, from the workflow
+#   go tool goreleaser release --snapshot --clean --skip=publish   # dry run, from anywhere
+#
+# This replaces the three hand-rolled cross-compiles and three tar invocations that
+# build_release.yml used to carry, and adds the checksums and changelog it never had.
+version: 2
+
+project_name: quadctl
+
+before:
+  hooks:
+    # Not `go mod tidy`: a hook that rewrites go.mod during a release is a hook that can fail
+    # the release over a diff nobody asked for. Downloading is all the build actually needs.
+    - go mod download
+
+builds:
+  - id: quadctl
+    main: .
+    binary: quadctl
+    env:
+      - CGO_ENABLED=0
+    # quadctl shells out to podman and systemctl, so the platforms are the ones those run on.
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "6"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .FullCommit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: quadctl
+    ids:
+      - quadctl
+    formats:
+      - tar.gz
+    # Deliberately the names the old workflow produced (quadctl_linux_amd64, _arm64, _armhf)
+    # rather than GoReleaser's versioned default: anything pinning a download URL to a
+    # previous release would break on a rename, and the tag already carries the version.
+    # The extension is the one change - these are real gzipped tarballs now, not bare tars.
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_
+      {{- if and (eq .Arch "arm") (eq .Arm "6") }}armhf
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^refactor:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  # A tag like v1.0.0-rc1 publishes as a prerelease without anyone having to remember to.
+  prerelease: auto
+  footer: |
+    ---
+    Install: download the archive for your architecture, extract it, and put `quadctl`
+    somewhere on your `$PATH`. Verify it with `checksums.txt`.

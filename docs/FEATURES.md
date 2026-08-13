@@ -57,11 +57,16 @@ workflow relative to the effort.
 
 - **`.image` and `.build` quadlets.** Schemas already exist (`schema/image.go`,
   `schema/build.go`) — they just need wiring into the extension map, `pull` (`.image`),
-  and a `podman build` path for `.build`.
+  and a `podman build` path for `.build`. As of `TODO.md` §2 the parser at least *says* so:
+  a `.image` or `.build` file in a quadlet directory produces a "recognized but not
+  supported" warning rather than being skipped in silence, so the gap is visible while it
+  is still a gap.
 
-- **Multi-document / non-Pod Kubernetes YAML.** `readK8sYaml` handles exactly one
-  `kind: Pod` document; real `podman kube play` inputs routinely contain Deployments,
-  Services, ConfigMaps and multiple documents.
+- **Non-Pod Kubernetes YAML.** *Multi-document is done* (`TODO.md` §2): every `---`-separated
+  document is parsed and every `kind: Pod` among them contributes, and a file with no Pod at
+  all now says which kinds it did find instead of failing blankly. What remains is acting on
+  the other kinds — a Deployment's pod template describes containers quadctl could pull
+  images for and match `ps` output against, and today only `kind: Pod` is read that way.
 
 - **Quadlet drop-in directories beyond `*.conf`**, and systemd's `%i`/`%h`-style specifier
   expansion, so parsed values match what the generator actually sees.

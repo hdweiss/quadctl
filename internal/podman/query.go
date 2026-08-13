@@ -24,8 +24,14 @@ func ResourceExists(r runner.Runner, qType string, name string) bool {
 	return runner.RunSilent(r, inspectCmd) == nil
 }
 
+// PSArgs is the query ContainerPS runs. Exported so that print mode can show the command a
+// listing came from instead of silently running it anyway.
+func PSArgs() []string {
+	return []string{"podman", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.PodName}}|{{.Status}}|{{.Ports}}|{{.Image}}|{{.Created}}"}
+}
+
 func ContainerPS(r runner.Runner, quadlets []*quadlet.Quadlet) ([][]string, error) {
-	cmd := []string{"podman", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.PodName}}|{{.Status}}|{{.Ports}}|{{.Image}}|{{.Created}}"}
+	cmd := PSArgs()
 	output, err := runner.RunCaptured(r, cmd)
 	if err != nil {
 		return nil, err
@@ -47,6 +53,26 @@ func ContainerPS(r runner.Runner, quadlets []*quadlet.Quadlet) ([][]string, erro
 		}
 	}
 	return psInfo, nil
+}
+
+// statusColumn is where ContainerPS puts podman's Status field in each row.
+const statusColumn = 3
+
+// AnyRunning reports whether any row ContainerPS returned describes a container that is
+// currently up. podman writes "Up 3 minutes", "Up 2 hours (healthy)", "Exited (0) 5 minutes
+// ago", "Created", ... - so the question is what the status starts with.
+//
+// 'start' used to ask this of the first row only, which answered for whichever container
+// podman happened to list first: a stopped one at the head meant a running stack was never
+// restarted (TODO.md section 2). The systemd path asked only whether there were any rows at
+// all, and 'podman ps -a' lists exited containers too.
+func AnyRunning(psInfo [][]string) bool {
+	for _, row := range psInfo {
+		if len(row) > statusColumn && strings.HasPrefix(strings.TrimSpace(row[statusColumn]), "Up") {
+			return true
+		}
+	}
+	return false
 }
 
 // quadletOwnsContainer reports whether the podman container called name, in the pod called

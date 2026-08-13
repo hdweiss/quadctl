@@ -24,7 +24,6 @@ func (m listModel) Init() tea.Cmd {
 // Update handles incoming events like key presses.
 func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-
 	case tea.KeyMsg:
 		switch msg.String() {
 		// Exit without selecting anything

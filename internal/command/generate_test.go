@@ -26,12 +26,15 @@ var update = flag.Bool("update", false, "rewrite the golden files with the curre
 // kept whole, a quoted value with a space, a repeated key, a whitespace list, and a
 // continuation. The stack also pins the naming rule from PLAN.md Phase 4 - explicit names
 // (web-app, data), defaulted ones (systemd-shell, systemd-cache), references resolving to
-// them, and a bind mount passing through untouched.
+// them, and a bind mount passing through untouched. web.kube covers the [Kube] option schema
+// from TODO.md section 1, including the keys that configure the systemd unit rather than the
+// podman command line and so must not appear in it.
 //
-// Regenerate with: go test ./internal/core/ -run TestGenerateCommandsGolden -update
+// Regenerate with: go test ./internal/command/ -run TestGenerateCommandsGolden -update
 func TestGenerateCommandsGolden(t *testing.T) {
 	quadctl := &quadlet.State{
 		Runner:         &runner.RecordingRunner{},
+		Config:         config.DefaultConfig(),
 		QuadletSchemas: schema.AllQuadletOptions(),
 		SearchDir:      "testdata/stack",
 	}
@@ -266,4 +269,56 @@ func commandLines(commands []Command) []string {
 		out = append(out, strings.Join(c.Cmd, " "))
 	}
 	return out
+}
+
+// TestHandleRemoveHonorsKeepSettings covers TODO.md section 2: remove_volumes and
+// remove_networks were honored only under -s, so a plain 'quadctl rm' destroyed the data the
+// user had explicitly asked to keep.
+func TestHandleRemoveHonorsKeepSettings(t *testing.T) {
+	quadlets := []*quadlet.Quadlet{
+		{ID: "data", Type: ".volume", ResourceName: "systemd-data"},
+		{ID: "front", Type: ".network", ResourceName: "systemd-front"},
+		{ID: "app", Type: ".container", ResourceName: "systemd-app"},
+	}
+
+	tests := []struct {
+		name            string
+		volumes, nets   bool
+		wantCommandsFor []string
+	}{
+		{
+			name: "remove everything", volumes: true, nets: true,
+			wantCommandsFor: []string{
+				"podman container rm -f systemd-app",
+				"podman network rm systemd-front",
+				"podman volume rm systemd-data",
+			},
+		},
+		{
+			name: "keep both", volumes: false, nets: false,
+			wantCommandsFor: []string{"podman container rm -f systemd-app", "", ""},
+		},
+		{
+			name: "keep volumes only", volumes: false, nets: true,
+			wantCommandsFor: []string{"podman container rm -f systemd-app", "podman network rm systemd-front", ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.IsRemoveVolumes = tt.volumes
+			cfg.IsRemoveNetworks = tt.nets
+
+			commands, err := HandleRemove(&quadlet.State{Runner: &runner.RecordingRunner{}, Config: cfg}, quadlets)
+			if err != nil {
+				t.Fatalf("HandleRemove: %v", err)
+			}
+			// A kept resource still gets a command, so that the run says what it did not do;
+			// it just has no argv to run.
+			if !slices.Equal(commandLines(commands), tt.wantCommandsFor) {
+				t.Errorf("commands = %q, want %q", commandLines(commands), tt.wantCommandsFor)
+			}
+		})
+	}
 }

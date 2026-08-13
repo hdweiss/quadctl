@@ -12,7 +12,9 @@ package systemd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +29,6 @@ import (
 )
 
 func HandleCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]command.Command, error) {
-
 	commands := []command.Command{}
 
 	var targetDir string
@@ -53,10 +54,16 @@ func HandleCreate(quadctl *quadlet.State, quadlets []*quadlet.Quadlet) ([]comman
 	if !fileInfo.IsDir() {
 		return nil, fmt.Errorf("quadlet path %s is not a directory. Ensure the path points to a directory and try again", targetDir)
 	}
-	perm := fileInfo.Mode().Perm()
-	if perm&0200 != 0200 && perm&0020 != 0020 && perm&0002 != 0002 {
-		return nil, fmt.Errorf("quadlet path %s is not writable. Ensure the directory is writable and try again%s", targetDir, rootlessHint)
+	// Ask the filesystem rather than reading the mode bits. "Is the write bit set for
+	// somebody?" is not the same question as "can this process write here": it passed for a
+	// root-owned 0755 directory and failed for a 0400 directory this user owns, and it knew
+	// nothing of ACLs, read-only mounts or SELinux (TODO.md section 2).
+	probe, err := os.CreateTemp(targetDir, ".quadctl-write-check-")
+	if err != nil {
+		return nil, fmt.Errorf("quadlet path %s is not writable: %w%s", targetDir, err, rootlessHint)
 	}
+	probe.Close()
+	_ = os.Remove(probe.Name())
 
 	c := command.NewCommand(fmt.Sprintf("Installing quadlets to %s", targetDir))
 	if quadctl.IsVerbose {
@@ -257,13 +264,20 @@ func pruneStaleSystemdFiles(quadctl *quadlet.State, targetDir, installName, sear
 		return commands, nil
 	}
 
+	// Being unable to read either side means there is nothing safe to call stale, so pruning
+	// is skipped rather than failing the install. A destination that does not exist yet is the
+	// ordinary first-install case and says nothing; anything else is worth a word.
 	destEntries, err := os.ReadDir(dest)
 	if err != nil {
-		return commands, nil
+		if !errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - cannot read %s: %v\n", dest, err)
+		}
+		return commands, nil //nolint:nilerr // not being able to prune is not a failed install
 	}
 	srcEntries, err := os.ReadDir(searchDir)
 	if err != nil {
-		return commands, nil
+		fmt.Fprintf(os.Stderr, "Warning: skipping cleanup of stale files - cannot read %s: %v\n", searchDir, err)
+		return commands, nil //nolint:nilerr // as above
 	}
 
 	present := map[string]bool{}
@@ -425,7 +439,7 @@ func validateQuadletGenerationCommand(quadctl *quadlet.State, quadlets []*quadle
 		}
 
 		var problems []string
-		for _, rawLine := range strings.Split(string(output), "\n") {
+		for _, rawLine := range strings.Split(output, "\n") {
 			line := stripGeneratorLogPrefix(strings.TrimSpace(rawLine))
 			if line == "" || strings.HasPrefix(line, "Loading source unit file") {
 				continue // Informational, not an error (podman logs one of these per file, success or not).

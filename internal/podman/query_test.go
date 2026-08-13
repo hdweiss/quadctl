@@ -78,3 +78,32 @@ func TestGetContainerPSFiltersExactly(t *testing.T) {
 		t.Errorf("matched %d row(s) %v, want just systemd-web", len(info), info)
 	}
 }
+
+// TestAnyRunning covers TODO.md section 2: 'start' decided whether the stack was already up
+// from the first ps row alone, and the systemd path from the row count alone.
+func TestAnyRunning(t *testing.T) {
+	row := func(name, status string) []string {
+		return []string{"id", name, "", status, "", "image", "created"}
+	}
+
+	tests := []struct {
+		name string
+		rows [][]string
+		want bool
+	}{
+		{"nothing at all", nil, false},
+		{"all exited", [][]string{row("a", "Exited (0) 2 hours ago"), row("b", "Created")}, false},
+		{"running, listed first", [][]string{row("a", "Up 3 minutes"), row("b", "Created")}, true},
+		{"running, listed last", [][]string{row("a", "Exited (0) 2 hours ago"), row("b", "Up 3 minutes")}, true},
+		{"running and healthy", [][]string{row("a", "Up 2 hours (healthy)")}, true},
+		{"short row", [][]string{{"id", "a"}}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AnyRunning(tt.rows); got != tt.want {
+				t.Errorf("AnyRunning(%v) = %v, want %v", tt.rows, got, tt.want)
+			}
+		})
+	}
+}

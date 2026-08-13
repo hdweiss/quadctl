@@ -12,7 +12,6 @@ import (
 )
 
 func HandleList(quadctl *quadlet.State) error {
-
 	if !quadctl.IsListAll {
 		absPath := quadctl.Config.QuadletSrcPath
 		if quadctl.IsSystemd {
